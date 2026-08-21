@@ -98,12 +98,12 @@ export class Store {
     }
   }
 
-  listHistory(appId, buttonId, { includeOutput = true } = {}) {
-    const entries = structuredClone(this.history[`${appId}/${buttonId}`] ?? []);
-    if (!includeOutput) {
-      for (const e of entries) delete e.output;
-    }
-    return entries;
+  listHistory(appId, buttonId) {
+    return structuredClone((this.history[`${appId}/${buttonId}`] ?? []).slice().reverse());
+  }
+
+  deleteHistory(appId, buttonId) {
+    delete this.history[`${appId}/${buttonId}`];
   }
 }
 

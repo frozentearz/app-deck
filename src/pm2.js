@@ -45,16 +45,14 @@ export class Pm2 {
     return runCli(this.pm2Path, args);
   }
 
-  async start({ name = PM2_NAME, script = 'src/index.js', cwd = process.cwd() } = {}) {
-    await this._spawn(['start', script, '--name', name, '--cwd', cwd]);
+  async start({ name = PM2_NAME, script = 'src/index.js', cwd = process.cwd(), args = [] } = {}) {
+    const cliArgs = ['start', script, '--name', name, '--cwd', cwd];
+    if (args.length > 0) cliArgs.push('--', ...args);
+    await this._spawn(cliArgs);
   }
 
   async stop(name = PM2_NAME) {
     await this._spawn(['stop', name]);
-  }
-
-  async restart(name = PM2_NAME) {
-    await this._spawn(['restart', name]);
   }
 
   async delete(name = PM2_NAME) {

@@ -59,10 +59,10 @@ echo "sudo env PATH=\\$PATH:/opt/homebrew/bin pm2 startup launchd -u frazier --h
   assert.match(res.manual, /^sudo /);
 });
 
-test('stop/restart/delete/save call the right subcommands', async () => {
+test('stop/delete/save call the right subcommands', async () => {
   const { script, dir } = await fakePm2(RECORD_ARGS);
   const pm2 = new Pm2({ pm2Path: script });
-  for (const [method, arg] of [['stop', 'blog'], ['restart', 'blog'], ['delete', 'blog']]) {
+  for (const [method, arg] of [['stop', 'blog'], ['delete', 'blog']]) {
     await pm2[method](arg);
     const args = await readFile(join(dir, 'bin', 'args.txt'), 'utf8');
     assert.ok(args.trim().startsWith(method), `${method}: ${args}`);

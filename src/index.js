@@ -89,34 +89,22 @@ function normalizeButton(input, { appId, id } = {}) {
   };
 }
 
-function buttonView(button, run) {
-  const v = { ...button, state: 'idle' };
-  if (run) {
-    v.state = run.state;
-    if (run.startedAt) v.startedAt = run.startedAt;
-  }
-  return v;
+function pm2Name(appId, buttonId) {
+  return `${appId}-${buttonId}`;
 }
 
-function appView(app, runs) {
-  return { ...app, buttons: app.buttons.map((b) => buttonView(b, runs[`${app.id}/${b.id}`])) };
-}
-
-function handleRunManaged(runs, runKey, { command, cwd, shell }) {
-  if (runs[runKey]) {
-    return { conflict: true };
+async function teardownButton(pm2, store, runs, appId, button) {
+  const key = `${appId}/${button.id}`;
+  const run = runs[key];
+  if (run?.executor) {
+    run.executor.cancel();
+    delete runs[key];
   }
-  const ex = new Executor({ command, cwd, shell });
-  runs[runKey] = { state: 'running', executor: ex, startedAt: null };
-  ex.on('running', ({ startedAt }) => {
-    const run = runs[runKey];
-    if (run) run.startedAt = startedAt;
-  });
-  ex.on('finished', (result) => {
-    runs[runKey] = { state: 'idle', lastResult: result };
-  });
-  ex.start();
-  return { conflict: false };
+  if (button.type === 'managed') {
+    try {
+      await pm2.delete(pm2Name(appId, button.id));
+    } catch {}
+  }
 }
 
 export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0) } = {}) {
@@ -134,6 +122,25 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       key,
       store.saveHistory().finally(() => historyQueues.delete(key))
     );
+  }
+
+  async function appView(app) {
+    const buttons = [];
+    for (const b of app.buttons) {
+      const key = `${app.id}/${b.id}`;
+      const v = { ...b, state: 'idle' };
+      if (b.type === 'managed') {
+        try {
+          const status = await pm2.status(pm2Name(app.id, b.id));
+          v.state = status.online ? 'running' : 'idle';
+        } catch {}
+      } else if (runs[key]) {
+        v.state = runs[key].state;
+        if (runs[key].startedAt) v.startedAt = runs[key].startedAt;
+      }
+      buttons.push(v);
+    }
+    return { ...app, buttons };
   }
 
   const server = http.createServer(async (req, res) => {
@@ -252,7 +259,10 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
 
   async function handleApps(req, res) {
     if (req.method === 'GET') {
-      send(res, 200, store.listApps().map((a) => appView(a, runs)));
+      const apps = store.listApps();
+      const views = [];
+      for (const a of apps) views.push(await appView(a));
+      send(res, 200, views);
     } else if (req.method === 'POST') {
       const body = await readBody(req);
       let app;
@@ -274,7 +284,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (req.method === 'GET') {
       const app = store.getApp(appId);
       if (!app) return notFound(res);
-      send(res, 200, appView(app, runs));
+      send(res, 200, await appView(app));
     } else if (req.method === 'PUT') {
       const body = await readBody(req);
       let app;
@@ -286,7 +296,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       const existing = store.getApp(appId);
       if (existing) {
         for (const b of existing.buttons) {
-          if (b.type === 'managed') stopManaged(appId, b.id);
+          await teardownButton(pm2, store, runs, appId, b);
         }
       }
       store.upsertApp(app);
@@ -304,10 +314,10 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       const app = store.getApp(appId);
       if (app) {
         for (const b of app.buttons) {
-          if (b.type === 'managed') stopManaged(appId, b.id);
-          const key = `${appId}/${b.id}`;
-          if (runs[key]) delete runs[key];
+          await teardownButton(pm2, store, runs, appId, b);
+          store.deleteHistory(appId, b.id);
         }
+        await store.saveHistory();
       }
       store.deleteApp(appId);
       await store.save();
@@ -334,37 +344,42 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       } catch (err) {
         return badRequest(res, err.message);
       }
-      if (button.type === 'managed') stopManaged(appId, buttonId);
+      const existingButton = store.getButton(appId, buttonId);
+      if (existingButton) {
+        await teardownButton(pm2, store, runs, appId, existingButton);
+      }
       store.upsertButton(appId, button);
       await store.save();
       send(res, 200, button);
     } else if (req.method === 'DELETE') {
       const existing = store.getButton(appId, buttonId);
       if (!existing) return notFound(res);
-      if (existing.type === 'managed') stopManaged(appId, buttonId);
-      const key = `${appId}/${buttonId}`;
-      if (runs[key]) delete runs[key];
+      await teardownButton(pm2, store, runs, appId, existing);
+      store.deleteHistory(appId, buttonId);
       store.deleteButton(appId, buttonId);
       await store.save();
+      await store.saveHistory();
       send(res, 200, { ok: true });
     } else {
       notFound(res);
     }
   }
 
-  function handleRun(req, res, appId, buttonId) {
+  async function handleRun(req, res, appId, buttonId) {
     if (req.method !== 'POST') return notFound(res);
     const app = store.getApp(appId);
     if (!app) return notFound(res);
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
     const key = `${appId}/${buttonId}`;
-    if (runs[key]?.state === 'running') {
-      return send(res, 409, { error: 'already running' });
-    }
-    const cwd = button.cwd ?? app.dir;
+    const cwd = button.cwd ?? app.dir ?? process.cwd();
+    const name = pm2Name(appId, buttonId);
+    const runId = `r${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
+
     if (button.type === 'exec') {
-      const runId = `r${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
+      if (runs[key]?.state === 'running') {
+        return send(res, 409, { error: 'already running' });
+      }
       const run = { state: 'running', executor: null, startedAt: null, runId };
       runs[key] = run;
       const executor = new Executor({ command: button.command, cwd, shell: button.shell });
@@ -374,7 +389,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       });
       executor.on('finished', (result) => {
         const entry = {
-          id: `r${runId}`,
+          id: runId,
           startedAt: result.startedAt,
           finishedAt: result.finishedAt,
           exitCode: result.exitCode,
@@ -389,36 +404,79 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       executor.start();
       send(res, 202, { state: 'running', runId });
     } else {
-      const managed = handleRunManaged(runs, key, { command: button.command, cwd, shell: button.shell });
-      if (managed.conflict) return send(res, 409, { error: 'already running' });
-      send(res, 202, { state: 'running' });
+      try {
+        const status = await pm2.status(name);
+        if (status.online) return send(res, 409, { error: 'already running' });
+        const shell = process.platform === 'win32' ? 'cmd' : 'bash';
+        const flag = process.platform === 'win32' ? '/c' : '-c';
+        await pm2.start({ name, script: shell, cwd, args: [flag, button.command] });
+        const now = Date.now();
+        persistHistory(appId, buttonId, {
+          id: runId, startedAt: now, finishedAt: now,
+          exitCode: 0, success: true, killed: false,
+          summary: `pm2 start ${name}`, output: '',
+        }).catch(() => {});
+        send(res, 202, { state: 'running', runId });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
     }
   }
 
-  function handleCancel(res, appId, buttonId) {
+  async function handleCancel(res, appId, buttonId) {
     const app = store.getApp(appId);
     if (!app) return notFound(res);
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
-    const run = runs[`${appId}/${buttonId}`];
-    if (!run || !run.executor) return send(res, 409, { error: 'not running' });
-    run.executor.cancel();
-    send(res, 200, { ok: true });
+    const key = `${appId}/${buttonId}`;
+    const name = pm2Name(appId, buttonId);
+
+    if (button.type === 'managed') {
+      try {
+        await pm2.stop(name);
+        const now = Date.now();
+        persistHistory(appId, buttonId, {
+          id: `r${Date.now().toString(36)}${randomBytes(2).toString('hex')}`,
+          startedAt: now, finishedAt: now,
+          exitCode: null, success: false, killed: true,
+          summary: `pm2 stop ${name}`, output: '',
+        }).catch(() => {});
+        send(res, 200, { ok: true });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    } else {
+      const run = runs[key];
+      if (!run || !run.executor) return send(res, 409, { error: 'not running' });
+      run.executor.cancel();
+      send(res, 200, { ok: true });
+    }
   }
 
-  function handleStatus(res, appId, buttonId) {
+  async function handleStatus(res, appId, buttonId) {
     const app = store.getApp(appId);
     if (!app) return notFound(res);
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
-    const run = runs[`${appId}/${buttonId}`];
-    send(res, 200, {
-      state: run?.state ?? 'idle',
-      startedAt: run?.startedAt ?? null,
-      lastResult: run?.lastResult
-        ? { exitCode: run.lastResult.exitCode, success: run.lastResult.success, killed: run.lastResult.killed, finishedAt: run.lastResult.finishedAt }
-        : null,
-    });
+    const key = `${appId}/${buttonId}`;
+
+    if (button.type === 'managed') {
+      try {
+        const status = await pm2.status(pm2Name(appId, buttonId));
+        send(res, 200, { state: status.online ? 'running' : 'idle', startedAt: null, lastResult: null });
+      } catch {
+        send(res, 200, { state: 'idle', startedAt: null, lastResult: null });
+      }
+    } else {
+      const run = runs[key];
+      send(res, 200, {
+        state: run?.state ?? 'idle',
+        startedAt: run?.startedAt ?? null,
+        lastResult: run?.lastResult
+          ? { exitCode: run.lastResult.exitCode, success: run.lastResult.success, killed: run.lastResult.killed, finishedAt: run.lastResult.finishedAt }
+          : null,
+      });
+    }
   }
 
   function handleLogs(res, appId, buttonId) {
@@ -441,15 +499,6 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       res.end(content);
     } catch {
       notFound(res);
-    }
-  }
-
-  function stopManaged(appId, buttonId) {
-    const key = `${appId}/${buttonId}`;
-    const run = runs[key];
-    if (run?.executor) {
-      run.executor.cancel();
-      delete runs[key];
     }
   }
 

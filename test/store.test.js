@@ -54,8 +54,8 @@ test('history capped at HISTORY_LIMIT, oldest dropped', async () => {
     store.addHistory('a', 'b', { id: `h${i}`, startedAt: i, finishedAt: i, exitCode: 0, success: true, summary: '', output: '' });
   }
   assert.equal(store.listHistory('a', 'b').length, HISTORY_LIMIT);
-  assert.equal(store.listHistory('a', 'b')[0].id, `h${11}`);
-  assert.equal(store.listHistory('a', 'b').at(-1).id, `h${HISTORY_LIMIT + 10}`);
+  assert.equal(store.listHistory('a', 'b')[0].id, `h${HISTORY_LIMIT + 10}`);
+  assert.equal(store.listHistory('a', 'b').at(-1).id, `h${11}`);
 });
 
 test('deleteApp removes app; deleteButton removes button', async () => {

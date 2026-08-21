@@ -59,23 +59,18 @@ async function loadSystem() {
 }
 
 async function refreshRuns() {
-  const apps = await api('/api/apps');
-  state.apps = apps;
-  render({ silent: true });
+  state.apps = await api('/api/apps');
+  render();
 }
 
 /* ---------- render ---------- */
-
-function statusOf(button) {
-  return button.state === 'running' ? 'running' : 'idle';
-}
 
 function statusDot(button) {
   if (button.state === 'running') return 'running';
   return '';
 }
 
-function render({ silent = false } = {}) {
+function render() {
   const list = $('#appList');
   const empty = $('#emptyState');
   list.innerHTML = '';
@@ -163,8 +158,6 @@ function render({ silent = false } = {}) {
 
     list.appendChild(card);
   }
-
-  if (!silent) refreshPolling();
 }
 
 function renderButton(app, button) {
@@ -338,7 +331,7 @@ function openAppForm(app = null) {
       url: urlInput.value.trim() || null,
       port: portInput.value.trim() ? Number(portInput.value.trim()) : null,
     };
-    if (!payload.name) return toast(t('requestFailed') + 'name', { error: true });
+    if (!payload.name) return toast(t('nameRequired'), { error: true });
     try {
       if (isEdit) {
         await api(`/api/apps/${encodeURIComponent(id)}`, {
@@ -406,7 +399,7 @@ function openButtonForm(app, button = null) {
       cwd: cwdInput.value.trim() || null,
     };
     if (!payload.label || !payload.command) {
-      return toast(t('requestFailed') + 'label/command', { error: true });
+      return toast(t('fieldsRequired'), { error: true });
     }
     const method = isEdit ? 'PATCH' : 'PUT';
     try {
@@ -488,7 +481,7 @@ async function openLogs(app, button) {
     body.appendChild(empty);
   }
 
-  for (const entry of history.slice().reverse()) {
+  for (const entry of history) {
     const block = document.createElement('div');
     block.className = 'log-block';
 
@@ -553,7 +546,7 @@ $('#startupSwitch').addEventListener('change', async (e) => {
       showManual(res.manual, enabled);
       e.target.checked = false;
     } else {
-      toast(enabled ? t('saveOk') : t('saveOk'));
+      toast(t('saveOk'));
     }
     setTimeout(loadSystem, 1500);
   } catch (err) {
