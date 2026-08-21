@@ -520,7 +520,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
   return server;
 }
 
-const isMain = process.argv[1] && fileURLToPath(`file://${process.argv[1]}`) === fileURLToPath(import.meta.url);
+const isMain = process.env.NODE_APP_INSTANCE !== undefined || (process.argv[1] && fileURLToPath(`file://${process.argv[1]}`) === fileURLToPath(import.meta.url));
 
 if (isMain) {
   const dataDir = process.env.APP_DECK_DATA_DIR ?? DEFAULT_DATA_DIR;
