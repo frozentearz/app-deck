@@ -6,6 +6,7 @@ const state = {
   runs: {},
   lang: localStorage.getItem('appdeck-lang') || 'zh',
   pollTimer: null,
+  loading: true,
 };
 
 initI18n();
@@ -38,6 +39,7 @@ function toast(msg, { error = false } = {}) {
 async function loadApps() {
   const apps = await api('/api/apps');
   state.apps = apps;
+  state.loading = false;
   render();
 }
 
@@ -74,6 +76,14 @@ function render() {
   const list = $('#appList');
   const empty = $('#emptyState');
   list.innerHTML = '';
+  if (state.loading) {
+    empty.classList.add('hidden');
+    const skeleton = document.createElement('div');
+    skeleton.className = 'skeleton';
+    skeleton.innerHTML = '<div class="skeleton-card"></div><div class="skeleton-card"></div>';
+    list.appendChild(skeleton);
+    return;
+  }
   if (state.apps.length === 0) {
     empty.classList.remove('hidden');
     return;

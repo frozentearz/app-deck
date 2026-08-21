@@ -4,10 +4,10 @@
   --panel-2: #fbfbfc;
   --text: #18181b;
   --text-2: #52525b;
-  --text-3: #a1a1aa;
+  --text-3: #71717a;
   --border: #e4e4e7;
-  --accent: #0d9488;
-  --accent-strong: #0f766e;
+  --accent: #0f766e;
+  --accent-strong: #115e59;
   --accent-soft: #f0fdfa;
   --ok: #059669;
   --ok-soft: #e7f6f0;
@@ -444,6 +444,36 @@ input, textarea {
   align-items: center;
   justify-content: center;
   color: var(--text-3);
+}
+
+/* ---------- skeleton loading ---------- */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.skeleton-card {
+  height: 120px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--panel-2), transparent);
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 /* ---------- drawer (half-screen) ---------- */

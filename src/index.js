@@ -93,6 +93,10 @@ function pm2Name(appId, buttonId) {
   return `${appId}-${buttonId}`;
 }
 
+function buttonChanged(a, b) {
+  return a.type !== b.type || a.command !== b.command || a.cwd !== b.cwd || a.shell !== b.shell;
+}
+
 async function teardownButton(pm2, store, runs, appId, button) {
   const key = `${appId}/${button.id}`;
   const run = runs[key];
@@ -199,6 +203,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     } else if (action === 'daemon') {
       const body = await readBody(req);
       const enabled = body.enabled === true;
+      if (!(await pm2.isInstalled().catch(() => false))) return send(res, 503, { error: 'pm2 not installed' });
       if (daemonPending) return send(res, 409, { error: 'daemon operation in progress' });
       daemonPending = true;
       try {
@@ -221,6 +226,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     } else if (action === 'startup') {
       const body = await readBody(req);
       const enabled = body.enabled === true;
+      if (!(await pm2.isInstalled().catch(() => false))) return send(res, 503, { error: 'pm2 not installed' });
       if (startupPending) return send(res, 409, { error: 'startup operation in progress' });
       startupPending = true;
       try {
@@ -296,7 +302,10 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       const existing = store.getApp(appId);
       if (existing) {
         for (const b of existing.buttons) {
-          await teardownButton(pm2, store, runs, appId, b);
+          const newButton = app.buttons.find((nb) => nb.id === b.id);
+          if (!newButton || buttonChanged(b, newButton)) {
+            await teardownButton(pm2, store, runs, appId, b);
+          }
         }
       }
       store.upsertApp(app);
@@ -345,7 +354,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
         return badRequest(res, err.message);
       }
       const existingButton = store.getButton(appId, buttonId);
-      if (existingButton) {
+      if (existingButton && buttonChanged(existingButton, button)) {
         await teardownButton(pm2, store, runs, appId, existingButton);
       }
       store.upsertButton(appId, button);
@@ -463,7 +472,13 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (button.type === 'managed') {
       try {
         const status = await pm2.status(pm2Name(appId, buttonId));
-        send(res, 200, { state: status.online ? 'running' : 'idle', startedAt: null, lastResult: null });
+        const history = store.listHistory(appId, buttonId);
+        const last = history[0] ?? null;
+        send(res, 200, {
+          state: status.online ? 'running' : 'idle',
+          startedAt: last?.startedAt ?? null,
+          lastResult: last ? { exitCode: last.exitCode, success: last.success, killed: last.killed, finishedAt: last.finishedAt } : null,
+        });
       } catch {
         send(res, 200, { state: 'idle', startedAt: null, lastResult: null });
       }

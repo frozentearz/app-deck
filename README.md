@@ -54,7 +54,6 @@ Web 应用太多时，启动、停止、维护都要进目录敲命令，还要�
 ```bash
 cd app-deck                # 进入 app-deck 项目目录
 npm install pm2 -g         # 托管层（一次性）
-npm install                # 安装依赖
 npm start                  # 手动启动，浏览器打开 http://localhost:6969
 ```
 
@@ -65,10 +64,9 @@ npm start                  # 手动启动，浏览器打开 http://localhost:696
    ```bash
    npm install pm2 -g
    ```
-3. **下载本项目代码**（克隆或拷贝到任意目录），进入目录安装依赖：
+3. **下载本项目代码**（克隆或拷贝到任意目录），进入目录：
    ```bash
    cd app-deck
-   npm install
    ```
 
 ## 启动本应用

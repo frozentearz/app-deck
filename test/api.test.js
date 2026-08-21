@@ -322,6 +322,26 @@ test('GET /api/system/status reports pm2 missing', async (t) => {
   assert.equal(res.pm2Installed, false);
 });
 
+test('POST /api/system/daemon returns 503 when pm2 missing', async (t) => {
+  const api = await makeApi(t);
+  const res = await api.fetch('/api/system/daemon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+  assert.equal(res.status, 503);
+});
+
+test('POST /api/system/startup returns 503 when pm2 missing', async (t) => {
+  const api = await makeApi(t);
+  const res = await api.fetch('/api/system/startup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+  assert.equal(res.status, 503);
+});
+
 test('POST /api/system/daemon enable: starts app-deck then self-exits', async (t) => {
   let exited = false;
   const script = await fakePm2('#!/bin/sh\nexit 0\n');
