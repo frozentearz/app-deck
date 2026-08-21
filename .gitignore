@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# runtime
+*.log
+npm-debug.log*
+data/apps.json
+data/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors
+.vscode/
+.idea/
+*.swp

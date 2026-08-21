@@ -1,0 +1,129 @@
+const I18N = {
+  zh: {
+    daemon: '守护进程',
+    startup: '开机自启',
+    addApp: '新增项目',
+    addButton: '新增按钮',
+    editApp: '编辑项目',
+    editButton: '编辑按钮',
+    logs: '日志',
+    emptyHint: '还没有项目。点击下方按钮，登记你的第一个项目',
+    appName: '名称',
+    appId: '标识 (id)',
+    appDesc: '备注',
+    appDir: '项目目录',
+    appUrl: '访问地址',
+    appPort: '端口',
+    buttonLabel: '按钮名称',
+    buttonId: '标识 (id)',
+    buttonCommand: '命令',
+    buttonCwd: '工作目录',
+    save: '保存',
+    cancel: '取消',
+    delete: '删除',
+    edit: '编辑',
+    buttonsSection: '按钮',
+    appIdHint: 'URL 安全字符 a-z 0-9 -，创建后不可改',
+    appDirHint: '命令的默认工作目录',
+    appPortHint: '可选，暂仅作记录',
+    buttonCwdHint: '留空则继承项目目录',
+    runSuccess: '执行成功',
+    runFailed: '执行失败',
+    killed: '已取消',
+    running: '运行中',
+    noHistory: '暂无执行记录',
+    confirmDeleteApp: '确定删除项目「{name}」？其下所有按钮一并删除',
+    confirmDeleteButton: '确定删除按钮「{label}」？',
+    confirmCancelRun: '确定停止正在执行的命令？',
+    manualStartup: '请在终端手动执行以下命令完成开机自启注册：',
+    manualUnstartup: '请在终端手动执行以下命令完成开机自启卸载：',
+    copy: '复制',
+    copied: '已复制',
+    pm2Missing: '未检测到 pm2，守护/自启功能不可用。请先执行：npm install pm2 -g',
+    saveOk: '已保存',
+    deleteOk: '已删除',
+    requestFailed: '请求失败：',
+    started: '已启动',
+    stopped: '已停止',
+    cancelOk: '已发送停止请求',
+    busy: '该按钮正在执行中',
+    lastRun: '上次执行',
+    exitCode: '退出码',
+    none: '无',
+    langName: 'English',
+  },
+  en: {
+    daemon: 'Daemon',
+    startup: 'Auto-start',
+    addApp: 'Add Project',
+    addButton: 'Add Button',
+    editApp: 'Edit Project',
+    editButton: 'Edit Button',
+    logs: 'Logs',
+    emptyHint: 'No projects yet. Register your first project below',
+    appName: 'Name',
+    appId: 'ID',
+    appDesc: 'Description',
+    appDir: 'Directory',
+    appUrl: 'URL',
+    appPort: 'Port',
+    buttonLabel: 'Button Label',
+    buttonId: 'ID',
+    buttonCommand: 'Command',
+    buttonCwd: 'Working Dir',
+    save: 'Save',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    edit: 'Edit',
+    buttonsSection: 'Buttons',
+    appIdHint: 'URL-safe chars a-z 0-9 -, immutable after creation',
+    appDirHint: 'Default working directory for commands',
+    appPortHint: 'Optional, recorded only',
+    buttonCwdHint: 'Empty means inherit project directory',
+    runSuccess: 'Succeeded',
+    runFailed: 'Failed',
+    killed: 'Cancelled',
+    running: 'Running',
+    noHistory: 'No runs yet',
+    confirmDeleteApp: 'Delete project "{name}" and all its buttons?',
+    confirmDeleteButton: 'Delete button "{label}"?',
+    confirmCancelRun: 'Stop the running command?',
+    manualStartup: 'Run this command in your terminal to finish auto-start setup:',
+    manualUnstartup: 'Run this command in your terminal to finish auto-start removal:',
+    copy: 'Copy',
+    copied: 'Copied',
+    pm2Missing: 'pm2 not detected. Daemon/auto-start unavailable. Run: npm install pm2 -g',
+    saveOk: 'Saved',
+    deleteOk: 'Deleted',
+    requestFailed: 'Request failed: ',
+    started: 'Started',
+    stopped: 'Stopped',
+    cancelOk: 'Stop request sent',
+    busy: 'This button is already running',
+    lastRun: 'Last run',
+    exitCode: 'Exit code',
+    none: 'None',
+    langName: '中文',
+  },
+};
+
+let currentLang = localStorage.getItem('appdeck-lang') || 'zh';
+
+export { currentLang };
+
+export function t(key) {
+  return I18N[currentLang][key] ?? I18N.zh[key] ?? key;
+}
+
+export function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('appdeck-lang', lang);
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+}
+
+export function initI18n() {
+  setLang(currentLang);
+}
