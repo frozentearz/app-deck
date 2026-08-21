@@ -208,7 +208,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       daemonPending = true;
       try {
         if (enabled) {
-          await pm2.start({ name: 'app-deck', script: 'src/index.js', cwd: projectRoot });
+          await pm2.start({ name: 'app-deck', script: 'src/index.js', cwd: projectRoot, nodeArgs: ['--inspect=0'] });
           await pm2.save();
           send(res, 200, { enabled: true, manual: null });
           setTimeout(() => selfExit(), 500);
