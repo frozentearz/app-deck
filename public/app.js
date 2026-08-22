@@ -62,8 +62,54 @@ async function loadSystem() {
 }
 
 async function refreshRuns() {
-  state.apps = await api('/api/apps');
-  render();
+  const apps = await api('/api/apps');
+  state.apps = apps;
+  updateCards();
+}
+
+/** 增量更新：只刷新按钮状态点与执行记录区，不重建整个列表 */
+function updateCards() {
+  for (const app of state.apps) {
+    const card = document.querySelector(`.card[data-app-id="${app.id}"]`);
+    if (!card) continue;
+
+    const tiles = card.querySelectorAll('.button-tile');
+    app.buttons.forEach((button, i) => {
+      const tile = tiles[i];
+      if (!tile) return;
+      const dot = tile.querySelector('.dot');
+      if (dot) dot.className = `dot ${statusDot(button)}`;
+      const stopBtn = tile.querySelector('.btn-stop');
+      if (button.state === 'running' && !stopBtn) {
+        const stop = document.createElement('button');
+        stop.className = 'icon-btn btn-stop';
+        stop.textContent = '■';
+        stop.title = t('cancel');
+        stop.addEventListener('click', () => cancelRun(app, button));
+        tile.appendChild(stop);
+      } else if (button.state !== 'running' && stopBtn) {
+        stopBtn.remove();
+      }
+    });
+
+    refreshAppLogs(app.id, card);
+  }
+}
+
+/** 执行记录区：仅当内容变化时才重绘，避免每 2 秒闪烁 */
+async function refreshAppLogs(appId, card) {
+  const box = card.querySelector('.app-logs-box');
+  if (!box) return;
+  try {
+    const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);
+    const key = res.entries.map((e) => `${e.id}:${e.finishedAt}`).join('|');
+    if (box.dataset.lastKey !== key) {
+      renderLogEntries(box, appId, res.entries);
+      box.dataset.lastKey = key;
+    }
+  } catch {
+    // 静默失败，下次轮询重试
+  }
 }
 
 /* ---------- render ---------- */
@@ -111,6 +157,7 @@ function render() {
   for (const app of state.apps) {
     const card = document.createElement('section');
     card.className = 'card';
+    card.dataset.appId = app.id;
 
     const head = document.createElement('div');
     head.className = 'card-head';
@@ -224,12 +271,7 @@ function renderAppLogs(app) {
   });
 
   const load = async () => {
-    try {
-      const res = await api(`/api/apps/${encodeURIComponent(app.id)}/logs`);
-      renderLogEntries(box, app.id, res.entries);
-    } catch {
-      // 静默失败，下次轮询重试
-    }
+    refreshAppLogs(app.id, document.querySelector(`.card[data-app-id="${app.id}"]`));
   };
   load();
   wrap.appendChild(box);
