@@ -19,7 +19,7 @@ Web 应用太多时，启动、停止、维护都要进目录敲命令，还要�
 | 双类按钮 | 托管（pm2：守护 / 自启 / 崩溃重启）与执行（一次性命令 + 输出 / 退出码 / 日志）|
 | 全 CRUD | 项目与按钮均可在面板上增删改，实时持久化 |
 | 跨平台 | macOS / Linux / Windows（pm2 托管层 + 自研执行器）|
-| 开机自启 | pm2 startup 三平台注册 |
+| 开机自启 | macOS 用户级 launchd 一键开关（无密码）；Linux / Windows 见 TODO |
 | AI 接入 | 幂等 HTTP API，AI 读文档后 curl 自动登记项目 |
 | 多语言 | i18n（默认中文，可切换英文）|
 | 响应式 | WebUI 一屏流，适配桌面与移动端 |
@@ -100,36 +100,30 @@ pm2 restart app-deck           # 重启
 pm2 stop app-deck              # 停止（不删配置）
 ```
 
-## 守护进程与开机自启（命令速查，UI 故障时兜底）
+## 守护进程与开机自启
 
-> 面板右上角的开关对应以下命令。UI 正常时直接用开关即可，无需敲命令。
+**macOS（完整支持，UI 开关全自动，无需密码）**：
 
-**安装守护 / 开机自启**：
+- 「守护进程」开关：pm2 托管 ↔ 独立进程双向切换，网页不断线（`--no-autorestart` + `--no-treekill` + 端口重试）
+- 「开机自启」开关：用户级 launchd（`~/Library/LaunchAgents/pm2.<user>.plist` + `launchctl load`），全程无弹窗无密码
 
-```bash
-pm2 start src/index.js --name app-deck
-pm2 save                 # 固化当前进程列表（开机后 pm2 按此恢复）
-pm2 startup              # 生成系统自启服务，按提示复制执行输出中那条 `sudo ...` 命令
-```
-
-**卸载守护 / 关闭开机自启**：
+**UI 故障时命令行兜底**：
 
 ```bash
-pm2 delete app-deck          # 停止并移除进程
-pm2 unstartup                # 移除系统自启服务（同样按提示执行输出命令）
-pm2 save                     # 保存空列表，避免重启后自动恢复
+pm2 start src/index.js --name app-deck --no-autorestart --no-treekill  # 启动并守护
+pm2 save                                                                # 固化进程列表
+# 关闭守护（转为独立进程）：
+pm2 stop app-deck
+# 手动注册开机自启（macOS 用户级）：
+mkdir -p ~/Library/LaunchAgents
+launchctl load -w ~/Library/LaunchAgents/pm2.$USER.plist   # 若 plist 不存在，用 UI 开关生成
 ```
 
-### Windows 差异（pm2 无 startup 命令）
+## TODO（跨平台待办）
 
-```bash
-npm install pm2-windows-startup -g   # 安装自启插件（一次性）
-pm2-startup install                  # 注册开机自启
-pm2 save                             # 保存进程配置
-# 卸载：
-pm2 unstartup                         # 移除开机自启
-pm2 delete app-deck                   # 停止并移除 app-deck
-```
+- [ ] **Windows 守护开关**：`--no-treekill` 与 detached 子进程接棒在 Windows 语义不同，需实测适配（如 `taskkill` 策略）
+- [ ] **Windows 开机自启**：pm2 官方不支持 startup，需 `pm2-windows-startup` 插件或注册表 `HKCU\...\Run`
+- [ ] **Linux 验证**：守护/自启逻辑理论通用（Unix 机制），但未在 Linux 实测
 
 ## 目录结构
 

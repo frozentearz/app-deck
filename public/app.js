@@ -250,13 +250,9 @@ function openDrawer({ title, body, foot }) {
   if (foot) {
     const footEl = document.createElement('div');
     footEl.className = 'drawer-foot';
-    foot.append(...foot);
+    footEl.append(...foot);
     drawer.appendChild(footEl);
   }
-
-  drawer.classList.remove('hidden');
-  overlay.classList.remove('hidden');
-  drawer.setAttribute('aria-hidden', 'false');
 
   if (drawerCleanup) drawerCleanup();
   drawerCleanup = () => {
@@ -265,6 +261,10 @@ function openDrawer({ title, body, foot }) {
     drawer.setAttribute('aria-hidden', 'true');
     drawerCleanup = null;
   };
+
+  drawer.classList.remove('hidden');
+  overlay.classList.remove('hidden');
+  drawer.setAttribute('aria-hidden', 'false');
 }
 
 function closeDrawer() {

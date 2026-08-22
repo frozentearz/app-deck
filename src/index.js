@@ -112,7 +112,7 @@ async function teardownButton(pm2, store, runs, appId, button) {
   }
 }
 
-export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0), elevate = true } = {}) {
+export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0), elevate = true, startupHome = homedir() } = {}) {
   const pm2 = new Pm2({ pm2Path });
   const runs = {};
   const historyQueues = new Map();
@@ -200,7 +200,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
         pm2.status('app-deck').catch(() => ({ online: false })),
         pm2.isInstalled().catch(() => false),
       ]);
-      send(res, 200, { daemon: daemon.online ?? false, startup: pm2.startupStatus(), pm2Installed: installed });
+      send(res, 200, { daemon: daemon.online ?? false, startup: pm2.startupStatus({ home: startupHome }), pm2Installed: installed });
     } else if (action === 'daemon') {
       const body = await readBody(req);
       const enabled = body.enabled === true;
@@ -527,7 +527,12 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (!filePath.startsWith(normalize(publicDir))) return notFound(res);
     try {
       const content = await readFile(filePath);
-      res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] ?? 'application/octet-stream' });
+      const type = MIME[extname(filePath)] ?? 'application/octet-stream';
+      const isHtml = extname(filePath) === '.html';
+      res.writeHead(200, {
+        'Content-Type': type,
+        'Cache-Control': isHtml ? 'no-cache' : 'no-cache, max-age=3600',
+      });
       res.end(content);
     } catch {
       notFound(res);
