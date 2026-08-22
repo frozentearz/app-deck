@@ -7,6 +7,7 @@ const state = {
   lang: localStorage.getItem('appdeck-lang') || 'zh',
   pollTimer: null,
   loading: true,
+  appLogs: {}, // appId -> { follow: bool, scrollTop: number }
 };
 
 initI18n();
@@ -183,7 +184,93 @@ function render() {
     buttonsWrap.appendChild(addBtn);
     card.appendChild(buttonsWrap);
 
+    card.appendChild(renderAppLogs(app));
+
     list.appendChild(card);
+  }
+}
+
+/** 项目级执行记录区：约 7 行、可滚动、新日志自动滚到底，上翻暂停跟随 */
+function renderAppLogs(app) {
+  const wrap = document.createElement('div');
+  wrap.className = 'app-logs';
+  const header = document.createElement('div');
+  header.className = 'app-logs-header';
+  header.textContent = t('execRecords');
+  wrap.appendChild(header);
+
+  const box = document.createElement('div');
+  box.className = 'app-logs-box';
+  box.dataset.appId = app.id;
+
+  const saved = state.appLogs[app.id] || { follow: true, scrollTop: 0 };
+  state.appLogs[app.id] = saved;
+
+  box.addEventListener('scroll', () => {
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    saved.follow = nearBottom;
+    if (!nearBottom) saved.scrollTop = box.scrollTop;
+  });
+
+  // 上翻查看历史时暂停跟随；移出区域（失焦）恢复跟随最新
+  box.addEventListener('mouseenter', () => {
+    saved.follow = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  });
+  box.addEventListener('mouseleave', () => {
+    if (!saved.follow) {
+      saved.follow = true;
+      box.scrollTop = box.scrollHeight;
+    }
+  });
+
+  const load = async () => {
+    try {
+      const res = await api(`/api/apps/${encodeURIComponent(app.id)}/logs`);
+      renderLogEntries(box, app.id, res.entries);
+    } catch {
+      // 静默失败，下次轮询重试
+    }
+  };
+  load();
+  wrap.appendChild(box);
+  return wrap;
+}
+
+function renderLogEntries(box, appId, entries) {
+  const saved = state.appLogs[appId] || { follow: true, scrollTop: 0 };
+  const stickBottom = saved.follow;
+  const scrollTop = saved.scrollTop;
+
+  box.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'app-logs-empty';
+    empty.textContent = t('noHistory');
+    box.appendChild(empty);
+    return;
+  }
+  for (const e of [...entries].reverse()) {
+    const row = document.createElement('div');
+    row.className = `log-row ${e.success ? 'ok' : 'fail'}`;
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = new Date(e.startedAt).toLocaleTimeString();
+    const label = document.createElement('span');
+    label.className = 'log-label';
+    label.textContent = e.label || '';
+    const status = document.createElement('span');
+    status.className = 'log-status';
+    status.textContent = e.killed ? t('killed') : (e.success ? `✓ ${e.exitCode}` : `✗ ${e.exitCode}`);
+    const sum = document.createElement('span');
+    sum.className = 'log-summary';
+    sum.textContent = e.summary || '';
+    row.append(time, label, status, sum);
+    box.appendChild(row);
+  }
+  if (stickBottom) {
+    box.scrollTop = box.scrollHeight;
+  } else {
+    box.scrollTop = scrollTop;
   }
 }
 
@@ -216,12 +303,6 @@ function renderButton(app, button) {
     stop.title = t('cancel');
     stop.addEventListener('click', () => cancelRun(app, button));
     tile.appendChild(stop);
-  } else {
-    const logs = document.createElement('button');
-    logs.className = 'icon-btn';
-    logs.textContent = t('logs');
-    logs.addEventListener('click', () => openLogs(app, button));
-    tile.appendChild(logs);
   }
 
   const edit = document.createElement('button');
@@ -491,52 +572,6 @@ async function cancelRun(app, button) {
 }
 
 /* ---------- logs ---------- */
-
-async function openLogs(app, button) {
-  const body = document.createElement('div');
-  let history;
-  try {
-    history = await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/logs`);
-  } catch (err) {
-    return toast(t('requestFailed') + err.message, { error: true });
-  }
-
-  if (history.length === 0) {
-    const empty = document.createElement('p');
-    empty.textContent = t('noHistory');
-    empty.style.color = 'var(--text-3)';
-    body.appendChild(empty);
-  }
-
-  for (const entry of history) {
-    const block = document.createElement('div');
-    block.className = 'log-block';
-
-    const head = document.createElement('div');
-    head.className = 'log-head';
-    const dot = document.createElement('span');
-    dot.className = `dot ${entry.killed ? '' : entry.success ? 'ok' : 'fail'}`;
-    const time = document.createElement('span');
-    time.className = 'log-time';
-    time.textContent = new Date(entry.startedAt).toLocaleString();
-    const code = document.createElement('span');
-    code.className = `log-code ${entry.success ? 'ok' : 'fail'}`;
-    code.textContent = entry.killed ? t('killed') : `${t('exitCode')}: ${entry.exitCode}`;
-    const chevron = document.createElement('span');
-    chevron.className = 'chevron';
-    chevron.textContent = '▶';
-    head.append(dot, time, code, chevron);
-    head.addEventListener('click', () => block.classList.toggle('open'));
-
-    const logBody = document.createElement('pre');
-    logBody.className = 'log-body';
-    logBody.textContent = entry.output || '(no output)';
-    block.append(head, logBody);
-    body.appendChild(block);
-  }
-
-  openDrawer({ title: `${button.label} · ${t('logs')}`, body });
-}
 
 /* ---------- system switches ---------- */
 

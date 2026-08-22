@@ -175,6 +175,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (a2 === 'aiusage' && parts.length === 2) return handleAiUsage(res);
     if (a2 !== 'apps') return notFound(res);
     if (a3 === undefined) return handleApps(req, res);
+    if (a4 === 'logs' && parts.length === 4) return handleAppLogs(res, a3);
     if (a4 === undefined) return handleApp(req, res, a3);
     if (a4 !== 'buttons') return notFound(res);
     if (a5 === undefined) {
@@ -532,6 +533,19 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
     send(res, 200, store.listHistory(appId, buttonId));
+  }
+
+  function handleAppLogs(res, appId) {
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    const entries = [];
+    for (const b of app.buttons) {
+      for (const e of store.listHistory(appId, b.id)) {
+        entries.push({ ...e, label: b.label });
+      }
+    }
+    entries.sort((a, b) => b.startedAt - a.startedAt);
+    send(res, 200, { entries });
   }
 
   async function serveStatic(url, res) {

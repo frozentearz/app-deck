@@ -86,6 +86,36 @@ test('POST /api/apps generates unique server ids', async (t) => {
   assert.equal(apps.length, 2);
 });
 
+test('GET /api/apps/:id/logs merges all buttons history, newest first', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
+  });
+  await api.fetch('/api/apps/blog/buttons/a', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'A', type: 'exec', command: 'true', shell: true }),
+  });
+  await api.fetch('/api/apps/blog/buttons/b', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'B', type: 'exec', command: 'sleep 1', shell: true }),
+  });
+  await api.fetch('/api/apps/blog/buttons/a/run', { method: 'POST' });
+  await new Promise((r) => setTimeout(r, 300));
+  await api.fetch('/api/apps/blog/buttons/b/run', { method: 'POST' });
+  await new Promise((r) => setTimeout(r, 1500));
+  const res = await api.fetch('/api/apps/blog/logs');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.entries.length, 2);
+  assert.equal(body.entries[0].label, 'B');
+  assert.equal(body.entries[1].label, 'A');
+  assert.ok(body.entries[0].startedAt >= body.entries[1].startedAt);
+});
+
 test('GET /api/apps/:id returns app, 404 when missing', async (t) => {
   const api = await makeApi(t);
   await api.fetch('/api/apps/blog', {
