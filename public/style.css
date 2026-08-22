@@ -15,12 +15,17 @@
   --fail-soft: #fdecec;
   --run: #d97706;
   --run-soft: #fdf3e2;
-  --shadow: 0 1px 3px rgba(24, 24, 27, 0.06), 0 4px 16px rgba(24, 24, 27, 0.05);
-  --shadow-lg: 0 12px 40px rgba(24, 24, 27, 0.18);
+  --shadow: 0 1px 3px rgba(23, 29, 41, 0.07), 0 4px 16px rgba(23, 29, 41, 0.06);
+  --shadow-lg: 0 12px 40px rgba(23, 29, 41, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+/* ---------- 圆角规则（一致性锁定）----------
+ * 卡片 12px / 按钮 8px / 输入 8px / 开关 pill / 状态点圆形
+ * 全站唯一来源，新增组件必须套用此表
+ * ------------------------------------------- */
+
+:root {
     --bg: #101012;
     --panel: #1a1a1e;
     --panel-2: #202024;
@@ -37,8 +42,8 @@
     --fail-soft: #3f1d1d;
     --run: #fbbf24;
     --run-soft: #3a2d12;
-    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --shadow: 0 1px 3px rgba(4, 6, 12, 0.45), 0 4px 16px rgba(4, 6, 12, 0.35);
+  --shadow-lg: 0 12px 40px rgba(4, 6, 12, 0.65);
   }
 }
 
@@ -232,12 +237,26 @@ input, textarea {
   background: var(--panel);
   padding: 5px 9px;
   border-radius: 8px;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
 .icon-btn:hover {
   color: var(--text);
   border-color: var(--text-3);
+}
+
+.ai-btn {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-btn:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* ---------- layout ---------- */
@@ -455,7 +474,7 @@ input, textarea {
 }
 
 .skeleton-card {
-  height: 120px;
+  padding: 16px 18px;
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -469,6 +488,31 @@ input, textarea {
   inset: 0;
   background: linear-gradient(90deg, transparent, var(--panel-2), transparent);
   animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--border);
+  margin-bottom: 10px;
+}
+
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-64 { width: 64%; }
+.skeleton-line.w-32 { width: 32%; }
+.skeleton-line.w-56 { width: 56%; }
+
+.skeleton-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.skeleton-btn {
+  height: 38px;
+  border-radius: 8px;
+  background: var(--border);
 }
 
 @keyframes shimmer {
@@ -746,6 +790,10 @@ input, textarea {
   }
 
   .switch-label {
+    display: none;
+  }
+
+  .ai-btn span {
     display: none;
   }
 

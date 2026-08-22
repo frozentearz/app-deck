@@ -31,7 +31,7 @@ function toast(msg, { error = false } = {}) {
   el.classList.toggle('error', error);
   el.classList.remove('hidden');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.add('hidden'), error ? 5000 : 2600);
+  toast.timer = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 
 /* ---------- data ---------- */
@@ -80,7 +80,24 @@ function render() {
     empty.classList.add('hidden');
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.innerHTML = '<div class="skeleton-card"></div><div class="skeleton-card"></div>';
+    skeleton.innerHTML = `
+      <div class="skeleton-card">
+        <div class="skeleton-line w-40"></div>
+        <div class="skeleton-line w-64"></div>
+        <div class="skeleton-rows">
+          <div class="skeleton-btn"></div>
+          <div class="skeleton-btn"></div>
+          <div class="skeleton-btn"></div>
+        </div>
+      </div>
+      <div class="skeleton-card">
+        <div class="skeleton-line w-32"></div>
+        <div class="skeleton-line w-56"></div>
+        <div class="skeleton-rows">
+          <div class="skeleton-btn"></div>
+          <div class="skeleton-btn"></div>
+        </div>
+      </div>`;
     list.appendChild(skeleton);
     return;
   }
