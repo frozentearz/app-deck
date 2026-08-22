@@ -307,6 +307,25 @@ function renderLogEntries(box, appId, entries) {
     sum.className = 'log-summary';
     sum.textContent = e.summary || '';
     row.append(time, label, status, sum);
+
+    // 点击行展开完整输出
+    if (e.output) {
+      row.classList.add('expandable');
+      row.addEventListener('click', () => {
+        const expanded = row.nextElementSibling;
+        if (expanded && expanded.classList.contains('log-expanded')) {
+          expanded.remove();
+          row.classList.remove('open');
+          return;
+        }
+        const pre = document.createElement('pre');
+        pre.className = 'log-expanded';
+        pre.textContent = e.output;
+        row.insertAdjacentElement('afterend', pre);
+        row.classList.add('open');
+      });
+    }
+
     box.appendChild(row);
   }
   if (stickBottom) {

@@ -607,6 +607,43 @@ input, textarea {
   flex: 1;
 }
 
+.log-row.expandable {
+  cursor: pointer;
+}
+
+.log-row.expandable:hover {
+  background: var(--panel);
+}
+
+.log-row.expandable .log-summary::after {
+  content: " ▸";
+  color: var(--text-3);
+}
+
+.log-row.open .log-summary::after {
+  content: " ▾";
+}
+
+.log-expanded {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  background: #0f1115;
+  color: #d6d9e0;
+  padding: 10px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (prefers-color-scheme: light) {
+  .log-expanded {
+    background: #14161b;
+    color: #dfe2ea;
+  }
+}
+
 @media (max-width: 640px) {
   .app-logs-box {
     max-height: 140px;
