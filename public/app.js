@@ -351,7 +351,7 @@ function render() {
 
 function createAppCard(app) {
   const card = document.createElement('section');
-  card.className = 'card';
+  card.className = `card ${app.pinned ? 'is-pinned' : ''}`;
   card.dataset.appId = app.id;
 
   // 1. Card Header
@@ -375,6 +375,18 @@ function createAppCard(app) {
   idBadge.addEventListener('click', () => copyText(app.id, `${t('copied')}: ${app.id}`));
 
   titleRow.append(name, idBadge);
+
+  if (app.pinned) {
+    const pinBadge = document.createElement('span');
+    pinBadge.className = 'pinned-badge';
+    pinBadge.title = t('pinned');
+    pinBadge.innerHTML = `
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+      <span>${t('pinned')}</span>
+    `;
+    titleRow.appendChild(pinBadge);
+  }
+
   info.appendChild(titleRow);
 
   if (app.description) {
@@ -449,7 +461,7 @@ function createAppCard(app) {
 
   info.appendChild(chips);
 
-  // Actions on right: + Button, Edit, Delete
+  // Actions on right: + Button, Pin, Edit, Delete
   const actions = document.createElement('div');
   actions.className = 'card-actions';
 
@@ -457,6 +469,18 @@ function createAppCard(app) {
   addBtn.className = 'ghost-btn';
   addBtn.innerHTML = `<span>+ ${t('addButton')}</span>`;
   addBtn.addEventListener('click', () => openButtonForm(app, null));
+
+  const pinBtn = document.createElement('button');
+  pinBtn.className = `icon-btn pin-btn ${app.pinned ? 'active' : ''}`;
+  pinBtn.title = app.pinned ? t('unpin') : t('pin');
+  pinBtn.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="${app.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="17" x2="12" y2="22"></line>
+      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+    </svg>
+    <span>${app.pinned ? t('unpin') : t('pin')}</span>
+  `;
+  pinBtn.addEventListener('click', () => togglePinApp(app));
 
   const editBtn = document.createElement('button');
   editBtn.className = 'icon-btn';
@@ -468,7 +492,7 @@ function createAppCard(app) {
   delBtn.textContent = t('delete');
   delBtn.addEventListener('click', () => deleteApp(app));
 
-  actions.append(addBtn, editBtn, delBtn);
+  actions.append(addBtn, pinBtn, editBtn, delBtn);
   head.append(info, actions);
   card.appendChild(head);
 
@@ -980,6 +1004,22 @@ function openButtonForm(app, button = null) {
   }
 
   openDrawer({ title: t(isEdit ? 'editButton' : 'addButton'), body, foot });
+}
+
+/* Pin / Unpin App Handler */
+async function togglePinApp(app) {
+  const nextPinned = !app.pinned;
+  try {
+    await api(`/api/apps/${encodeURIComponent(app.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: nextPinned }),
+    });
+    toast(nextPinned ? t('pinSuccess') : t('unpinSuccess'));
+    loadApps();
+  } catch (err) {
+    toast(t('requestFailed') + err.message, { error: true });
+  }
 }
 
 /* Delete App Handler */
