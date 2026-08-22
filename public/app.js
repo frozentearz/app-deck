@@ -998,7 +998,7 @@ async function deleteApp(app) {
 async function runButton(app, button) {
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/run`, { method: 'POST' });
-    toast(t('started'));
+    toast(button.type === 'managed' ? t('started') : t('executed'));
     button.state = 'running';
     updateCardsTelemetry();
     updateGlobalStats();
