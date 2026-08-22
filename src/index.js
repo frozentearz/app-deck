@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -176,6 +177,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (a2 !== 'apps') return notFound(res);
     if (a3 === undefined) return handleApps(req, res);
     if (a4 === 'logs' && parts.length === 4) return handleAppLogs(res, a3);
+    if (a4 === 'status' && parts.length === 4) return handleAppStatus(res, a3);
     if (a4 === undefined) return handleApp(req, res, a3);
     if (a4 !== 'buttons') return notFound(res);
     if (a5 === undefined) {
@@ -548,6 +550,26 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     send(res, 200, { entries });
   }
 
+  /** 端口探活：每次调用真实 TCP 连接（无缓存） */
+  async function probeApp(appId, port) {
+    if (!port) return null;
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(2000);
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+      socket.once('error', () => resolve(false));
+      socket.connect(port, '127.0.0.1');
+    });
+  }
+
+  async function handleAppStatus(res, appId) {
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    const online = await probeApp(appId, app.port);
+    send(res, 200, { online });
+  }
+
   async function serveStatic(url, res) {
     let pathname = url.pathname;
     if (pathname === '/') pathname = '/index.html';
@@ -557,10 +579,9 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     try {
       const content = await readFile(filePath);
       const type = MIME[extname(filePath)] ?? 'application/octet-stream';
-      const isHtml = extname(filePath) === '.html';
       res.writeHead(200, {
         'Content-Type': type,
-        'Cache-Control': isHtml ? 'no-cache' : 'no-cache, max-age=3600',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       });
       res.end(content);
     } catch {

@@ -3,61 +3,185 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>App-Deck</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%230d9488'/></svg>">
+  <title>App-Deck : 控制台与项目台账</title>
+  <link rel="stylesheet" href="style.css?v=2.1">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2306b6d4'/><path d='M9 10h14M9 16h9M9 22h14' stroke='%23090a0f' stroke-width='2.5' stroke-linecap='round'/></svg>">
 </head>
 <body>
+  <!-- 顶部导航栏 -->
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="brand">
-        <span class="brand-mark"></span>
-        <span class="brand-name">App-Deck</span>
+      <div class="topbar-left">
+        <div class="brand" id="brandLogo">
+          <div class="brand-mark">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            </svg>
+          </div>
+          <div class="brand-info">
+            <span class="brand-name">App-Deck</span>
+            <span class="brand-sub" id="globalStatsText">0 项目 · 0 运行中</span>
+          </div>
+        </div>
       </div>
+
+      <!-- 居中快速检索栏 -->
+      <div class="topbar-search">
+        <div class="search-box">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="searchInput" data-i18n-placeholder="searchPlaceholder" placeholder="搜索项目、命令、路径、端口 (⌘K)" autocomplete="off" spellcheck="false">
+          <kbd class="search-kbd">⌘K</kbd>
+          <button id="clearSearchBtn" class="clear-search-btn hidden" title="清空搜索">×</button>
+        </div>
+      </div>
+
+      <!-- 右侧操作区 -->
       <div class="topbar-actions">
-        <label class="switch" title="daemon">
-          <span class="switch-label" data-i18n="daemon"></span>
-          <input type="checkbox" id="daemonSwitch">
-          <span class="switch-track"></span>
-        </label>
-        <label class="switch" title="startup">
-          <span class="switch-label" data-i18n="startup"></span>
-          <input type="checkbox" id="startupSwitch">
-          <span class="switch-track"></span>
-        </label>
-        <button class="icon-btn" id="langBtn" title="Language">EN</button>
-        <button class="icon-btn ai-btn" id="copyAiUsageBtn" title="复制 AI 接入文档到剪贴板">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span data-i18n="copyAiUsage"></span>
+        <!-- 系统引擎状态徽标 -->
+        <button class="engine-pill" id="engineBtn" title="查看系统引擎与守护配置">
+          <span class="engine-indicator" id="engineDot"></span>
+          <span class="engine-text" id="engineStatusText" data-i18n="engineStatus">系统引擎</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
+
+        <!-- AI 接入文档 -->
+        <button class="icon-btn ai-btn" id="copyAiUsageBtn" title="复制 AI 接入文档到剪贴板">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span data-i18n="copyAiUsage">AI 接入</span>
+        </button>
+
+        <!-- 调色板快速切换 -->
+        <div class="theme-picker" title="主题强调色 (Theme Accent)">
+          <span class="theme-dot indigo active" data-theme="indigo" title="Electric Indigo (Linear)"></span>
+          <span class="theme-dot cyan" data-theme="cyan" title="Cyber Cyan (Raycast)"></span>
+          <span class="theme-dot emerald" data-theme="emerald" title="Matrix Emerald"></span>
+          <span class="theme-dot amber" data-theme="amber" title="Sunset Amber"></span>
+        </div>
+
+        <!-- 深浅模式切换 -->
+        <button class="mode-toggle-btn" id="modeToggleBtn" title="切换深色/浅色模式">
+          <svg id="modeIconMoon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg id="modeIconSun" class="hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+
+        <!-- 语言切换 -->
+        <button class="icon-btn" id="langBtn" title="Language">EN</button>
+
+        <!-- 新建项目主 CTA -->
         <button class="primary-btn" id="addAppBtn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          <span data-i18n="addApp"></span>
+          <span data-i18n="addApp">新增项目</span>
         </button>
       </div>
     </div>
   </header>
 
+  <!-- 主内容区 -->
   <main class="container">
-    <div id="appList"></div>
+    <!-- 项目卡片列表容器 -->
+    <div id="appList" class="app-deck-grid"></div>
+
+    <!-- 空数据状态 -->
     <div id="emptyState" class="empty hidden">
       <div class="empty-mark">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 9v11"/></svg>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
       </div>
-      <p data-i18n="emptyHint"></p>
+      <div class="empty-text">
+        <h3 data-i18n="emptyHint">还没有项目。点击下方按钮，登记你的第一个项目</h3>
+        <p>支持常驻服务 pm2 守护与单次脚本执行，也可让 AI 自动登记</p>
+      </div>
       <button class="primary-btn" data-action="add-app">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span data-i18n="addApp"></span>
+        <span data-i18n="addApp">新增项目</span>
       </button>
+    </div>
+
+    <!-- 搜索无结果 -->
+    <div id="noSearchResults" class="empty search-empty hidden">
+      <div class="empty-mark">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </div>
+      <p data-i18n="noResults">没有找到匹配的项目或命令</p>
+      <button class="ghost-btn" id="resetSearchBtn" data-i18n="clearSearch">清空搜索</button>
     </div>
   </main>
 
+  <!-- 遮罩层 -->
   <div id="overlay" class="overlay hidden"></div>
+
+  <!-- 半屏抽屉（表单/详情） -->
   <aside id="drawer" class="drawer hidden" aria-hidden="true"></aside>
 
+  <!-- 系统引擎弹层 (Engine Hub Popover) -->
+  <div id="enginePopover" class="engine-popover hidden">
+    <div class="engine-popover-head">
+      <div class="engine-popover-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span data-i18n="engineTitle">系统引擎与守护配置</span>
+      </div>
+      <button class="popover-close-btn" id="closeEnginePopoverBtn">×</button>
+    </div>
+    <div class="engine-popover-body">
+      <p class="engine-desc" data-i18n="engineDesc">管理 App-Deck 本身的服务常驻、崩溃自愈与系统开机自启</p>
+      
+      <div class="engine-item">
+        <div class="engine-item-info">
+          <div class="engine-item-label" data-i18n="daemon">守护进程</div>
+          <div class="engine-item-sub">由 pm2 守护后台运行，自动重启崩溃进程</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="daemonSwitch">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="engine-item">
+        <div class="engine-item-info">
+          <div class="engine-item-label" data-i18n="startup">开机自启</div>
+          <div class="engine-item-sub">开机自动拉起 pm2 与 App-Deck 控制台</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="startupSwitch">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="engine-diagnostics">
+        <div class="diag-row">
+          <span class="diag-key">pm2 状态:</span>
+          <span class="diag-val" id="pm2DiagStatus">检测中...</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">运行端口:</span>
+          <span class="diag-val">http://localhost:6969</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全局 Toast 提示 -->
   <div id="toast" class="toast hidden"></div>
 
-  <script type="module" src="i18n.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="i18n.js?v=2.1"></script>
+  <script type="module" src="app.js?v=2.1"></script>
 </body>
 </html>

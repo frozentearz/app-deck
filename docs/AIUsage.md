@@ -65,7 +65,7 @@ AI 接入 App-Deck 的标准流程：
 | `description` | string | ❌ | 备注 |
 | `dir` | string | ❌ | 项目目录（按钮命令的相对基准目录） |
 | `url` | string | ❌ | 项目访问地址（用于「进入/打开」类按钮） |
-| `port` | number | ❌ | 服务端口（用于状态探测，P2） |
+| `port` | number | ❌ | 服务端口（用于运行状态探活） |
 | `buttons` | Button[] | ✅ | 按钮列表 |
 
 ### Button（按钮）
@@ -129,6 +129,12 @@ AI 接入 App-Deck 的标准流程：
 | POST | `/api/apps/:appId/buttons/:buttonId/cancel` | 停止正在执行的命令（进程树清理） |
 | GET | `/api/apps/:appId/buttons/:buttonId/status` | 按钮/进程状态 |
 | GET | `/api/apps/:appId/buttons/:buttonId/logs` | 执行日志与历史记录（时间、退出码、输出摘要、成败） |
+| GET | `/api/apps/:appId/status` | 项目运行状态探活（TCP 端口探测，无缓存） |
+| GET | `/api/apps/:appId/logs` | 项目级执行记录（合并所有按钮历史，带按钮 label） |
+
+**项目探活响应**：`{ "online": true|false|null }`。有 `port` 时真实 TCP 连接探测；无 port 返回 `null`。前端每 5 秒轮询一次。
+
+**项目级执行记录响应**：`{ "entries": [ { ...历史条目, "label": "按钮名" } ] }`，按时间倒序（最新在前）。
 
 **run 响应**：`202 { "state": "running", "runId": 1 }`。执行结果不在此响应中，通过 `logs` 接口查询（历史记录持久化，刷新不丢）。
 

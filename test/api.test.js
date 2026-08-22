@@ -116,6 +116,38 @@ test('GET /api/apps/:id/logs merges all buttons history, newest first', async (t
   assert.ok(body.entries[0].startedAt >= body.entries[1].startedAt);
 });
 
+test('GET /api/apps/:id/status probes port for online state', async (t) => {
+  const net = await import('node:net');
+  const tempServer = net.createServer();
+  await new Promise((resolve) => tempServer.listen(0, '127.0.0.1', resolve));
+  const { port } = tempServer.address();
+
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, port }),
+  });
+
+  const online = await (await api.fetch('/api/apps/blog/status')).json();
+  assert.equal(online.online, true);
+
+  await new Promise((resolve) => tempServer.close(resolve));
+  const offline = await (await api.fetch('/api/apps/blog/status')).json();
+  assert.equal(offline.online, false);
+});
+
+test('GET /api/apps/:id/status without port returns online: null', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(SAMPLE_APP),
+  });
+  const res = await (await api.fetch('/api/apps/blog/status')).json();
+  assert.equal(res.online, null);
+});
+
 test('GET /api/apps/:id returns app, 404 when missing', async (t) => {
   const api = await makeApi(t);
   await api.fetch('/api/apps/blog', {

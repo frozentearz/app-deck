@@ -1,18 +1,23 @@
 import { t, setLang, initI18n, currentLang } from './i18n.js';
 
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
 const state = {
   apps: [],
-  runs: {},
-  lang: localStorage.getItem('appdeck-lang') || 'zh',
-  pollTimer: null,
+  searchQuery: '',
+  system: { daemon: false, startup: false, pm2Installed: false },
+  expandedLogs: new Set(), // Set of appIds with expanded log trays
+  expandedLogRows: new Set(), // Set of logEntryId with expanded output
   loading: true,
-  appLogs: {}, // appId -> { follow: bool, scrollTop: number }
+  pollTimer: null,
 };
 
 initI18n();
 
-/* ---------- api ---------- */
+/* ==========================================================================
+   API Client & Utilities
+   ========================================================================== */
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -28,365 +33,674 @@ async function api(path, options = {}) {
 
 function toast(msg, { error = false } = {}) {
   const el = $('#toast');
+  if (!el) return;
   el.textContent = msg;
   el.classList.toggle('error', error);
   el.classList.remove('hidden');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.add('hidden'), 5000);
+  toast.timer = setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
-/* ---------- data ---------- */
+async function copyText(text, successMsg) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(successMsg || t('copied'));
+  } catch {
+    toast(t('requestFailed') + 'clipboard error', { error: true });
+  }
+}
+
+function formatRelativeDir(dir) {
+  if (!dir) return '';
+  return dir.replace(/^\/Users\/[^/]+/, '~');
+}
+
+/* ==========================================================================
+   Data Fetching & Polling
+   ========================================================================== */
 
 async function loadApps() {
-  const apps = await api('/api/apps');
-  state.apps = apps;
-  state.loading = false;
-  render();
+  try {
+    const apps = await api('/api/apps');
+    state.apps = apps;
+    state.loading = false;
+    render();
+    updateGlobalStats();
+  } catch (err) {
+    state.loading = false;
+    toast(t('requestFailed') + err.message, { error: true });
+  }
 }
 
 async function loadSystem() {
   try {
     const sys = await api('/api/system/status');
-    const daemonEl = $('#daemonSwitch');
-    const startupEl = $('#startupSwitch');
-    daemonEl.disabled = !sys.pm2Installed;
-    startupEl.disabled = !sys.pm2Installed;
-    daemonEl.checked = sys.daemon;
-    startupEl.checked = sys.startup;
-    if (!sys.pm2Installed) {
-      $('.topbar-actions').title = t('pm2Missing');
-    }
+    state.system = sys;
+    updateEngineHubUI();
   } catch (err) {
     console.warn('system status unavailable:', err.message);
   }
 }
 
-async function refreshRuns() {
-  const apps = await api('/api/apps');
-  state.apps = apps;
-  updateCards();
-}
-
-/** 增量更新：只刷新按钮状态点与执行记录区，不重建整个列表 */
-function updateCards() {
-  for (const app of state.apps) {
-    const card = document.querySelector(`.card[data-app-id="${app.id}"]`);
-    if (!card) continue;
-
-    const tiles = card.querySelectorAll('.button-tile');
-    app.buttons.forEach((button, i) => {
-      const tile = tiles[i];
-      if (!tile) return;
-      const dot = tile.querySelector('.dot');
-      if (dot) dot.className = `dot ${statusDot(button)}`;
-      const stopBtn = tile.querySelector('.btn-stop');
-      if (button.state === 'running' && !stopBtn) {
-        const stop = document.createElement('button');
-        stop.className = 'icon-btn btn-stop';
-        stop.textContent = '■';
-        stop.title = t('cancel');
-        stop.addEventListener('click', () => cancelRun(app, button));
-        tile.appendChild(stop);
-      } else if (button.state !== 'running' && stopBtn) {
-        stopBtn.remove();
-      }
-    });
-
-    refreshAppLogs(app.id, card);
+async function refreshRunsIncremental() {
+  try {
+    const apps = await api('/api/apps');
+    state.apps = apps;
+    updateCardsTelemetry();
+    updateGlobalStats();
+  } catch {
+    // Silent fail on background poll
   }
 }
 
-/** 执行记录区：仅当内容变化时才重绘，避免每 2 秒闪烁 */
-async function refreshAppLogs(appId, card) {
-  const box = card.querySelector('.app-logs-box');
-  if (!box) return;
+/** 探活单个项目端口，更新状态点（无缓存，真实 TCP 探测） */
+async function probeAppStatus(appId) {
+  const dot = document.querySelector(`.probe-dot[data-app-id="${appId}"]`);
+  if (!dot) return;
   try {
-    const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);
-    const key = res.entries.map((e) => `${e.id}:${e.finishedAt}`).join('|');
-    if (box.dataset.lastKey !== key) {
-      renderLogEntries(box, appId, res.entries);
-      box.dataset.lastKey = key;
-    }
+    const res = await api(`/api/apps/${encodeURIComponent(appId)}/status`);
+    const online = res.online;
+    dot.className = `probe-dot ${online === null ? 'unknown' : online ? 'online' : 'offline'}`;
+    dot.title = online === null ? t('appPortHint') : online ? t('online') : t('offline');
   } catch {
     // 静默失败，下次轮询重试
   }
 }
 
-/* ---------- render ---------- */
+/** 每 5 秒探活所有有 port 的项目 */
+function startProbePolling() {
+  clearInterval(state.probeTimer);
+  state.probeTimer = setInterval(() => {
+    for (const app of state.apps) {
+      if (app.port) probeAppStatus(app.id);
+    }
+  }, 5000);
+}
 
-function statusDot(button) {
-  if (button.state === 'running') return 'running';
-  return '';
+function updateGlobalStats() {
+  const totalApps = state.apps.length;
+  let totalButtons = 0;
+  let runningCount = 0;
+
+  for (const app of state.apps) {
+    totalButtons += app.buttons.length;
+    for (const b of app.buttons) {
+      if (b.state === 'running') runningCount++;
+    }
+  }
+
+  const statsEl = $('#globalStatsText');
+  if (statsEl) {
+    statsEl.textContent = `${totalApps} ${t('totalApps')} · ${totalButtons} ${t('totalButtons')} · ${runningCount} ${t('activeRuns')}`;
+  }
+}
+
+function updateEngineHubUI() {
+  const { daemon, startup, pm2Installed } = state.system;
+  const engineDot = $('#engineDot');
+  const engineText = $('#engineStatusText');
+  const daemonSwitch = $('#daemonSwitch');
+  const startupSwitch = $('#startupSwitch');
+  const pm2Diag = $('#pm2DiagStatus');
+
+  if (daemonSwitch) {
+    daemonSwitch.disabled = !pm2Installed;
+    daemonSwitch.checked = daemon;
+  }
+  if (startupSwitch) {
+    startupSwitch.disabled = !pm2Installed;
+    startupSwitch.checked = startup;
+  }
+
+  if (pm2Diag) {
+    pm2Diag.textContent = pm2Installed ? (daemon ? '在线 (守护托管)' : '已就绪 (独立进程)') : '未安装';
+    pm2Diag.style.color = pm2Installed ? 'var(--ok)' : 'var(--fail)';
+  }
+
+  if (!pm2Installed) {
+    if (engineDot) engineDot.className = 'engine-indicator warning';
+    if (engineText) engineText.textContent = t('engineMissing');
+    return;
+  }
+
+  if (daemon) {
+    if (engineDot) engineDot.className = 'engine-indicator online';
+    if (engineText) engineText.textContent = t('engineRunning');
+  } else {
+    if (engineDot) engineDot.className = 'engine-indicator standalone';
+    if (engineText) engineText.textContent = t('engineStandalone');
+  }
+}
+
+/* ==========================================================================
+   Incremental Card Telemetry Update
+   ========================================================================== */
+
+function updateCardsTelemetry() {
+  for (const app of state.apps) {
+    const card = document.querySelector(`.card[data-app-id="${app.id}"]`);
+    if (!card) continue;
+
+    // Update buttons
+    const tiles = card.querySelectorAll('.action-tile');
+    app.buttons.forEach((button, idx) => {
+      const tile = tiles[idx];
+      if (!tile) return;
+      const isRunning = button.state === 'running';
+
+      tile.classList.toggle('is-running', isRunning);
+      const dot = tile.querySelector('.tile-status-dot');
+      if (dot) {
+        dot.className = `tile-status-dot ${isRunning ? 'running' : (button.type === 'managed' ? 'idle' : 'idle')}`;
+      }
+
+      const triggerBtn = tile.querySelector('.btn-trigger');
+      if (triggerBtn) {
+        if (isRunning) {
+          triggerBtn.className = 'btn-trigger stop';
+          triggerBtn.innerHTML = `<span>■</span> <span>${t('stop')}</span>`;
+        } else {
+          triggerBtn.className = 'btn-trigger';
+          triggerBtn.innerHTML = `<span>▶</span> <span>${t('run')}</span>`;
+        }
+      }
+    });
+
+    // Update activity strip
+    updateCardActivityStrip(app.id, card);
+  }
+}
+
+async function updateCardActivityStrip(appId, card) {
+  const strip = card.querySelector('.card-activity-strip');
+  if (!strip) return;
+  try {
+    const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);
+    const entries = res.entries || [];
+    const latest = entries[0];
+    const summaryText = strip.querySelector('.activity-text');
+    const tag = strip.querySelector('.activity-tag');
+    const time = strip.querySelector('.activity-time');
+
+    if (!latest) {
+      if (summaryText) summaryText.textContent = t('noHistory');
+      if (tag) tag.className = 'activity-tag hidden';
+      if (time) time.textContent = '';
+      return;
+    }
+
+    if (tag) {
+      tag.classList.remove('hidden');
+      if (latest.killed) {
+        tag.className = 'activity-tag fail';
+        tag.textContent = t('killed');
+      } else if (latest.success) {
+        tag.className = 'activity-tag ok';
+        tag.textContent = `✓ 0`;
+      } else {
+        tag.className = 'activity-tag fail';
+        tag.textContent = `✗ ${latest.exitCode ?? 1}`;
+      }
+    }
+
+    if (time) {
+      time.textContent = new Date(latest.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    if (summaryText) {
+      summaryText.textContent = `${latest.label || ''}: ${latest.summary || 'done'}`;
+    }
+
+    // If inline tray is open, refresh logs tray
+    if (state.expandedLogs.has(appId)) {
+      const tray = card.querySelector('.card-logs-tray');
+      if (tray) renderLogsTrayEntries(tray, appId, entries);
+    }
+  } catch {
+    // Ignore error
+  }
+}
+
+/* ==========================================================================
+   Main Render Function
+   ========================================================================== */
+
+function getFilteredApps() {
+  const q = state.searchQuery.trim().toLowerCase();
+  if (!q) return state.apps;
+  return state.apps.filter((app) => {
+    if (app.name?.toLowerCase().includes(q)) return true;
+    if (app.id?.toLowerCase().includes(q)) return true;
+    if (app.description?.toLowerCase().includes(q)) return true;
+    if (app.dir?.toLowerCase().includes(q)) return true;
+    if (String(app.port || '').includes(q)) return true;
+    if (app.url?.toLowerCase().includes(q)) return true;
+    return app.buttons?.some((b) => b.label?.toLowerCase().includes(q) || b.command?.toLowerCase().includes(q));
+  });
 }
 
 function render() {
   const list = $('#appList');
   const empty = $('#emptyState');
+  const noSearch = $('#noSearchResults');
   list.innerHTML = '';
+
   if (state.loading) {
     empty.classList.add('hidden');
-    const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.innerHTML = `
+    noSearch.classList.add('hidden');
+    list.innerHTML = `
       <div class="skeleton-card">
-        <div class="skeleton-line w-40"></div>
-        <div class="skeleton-line w-64"></div>
-        <div class="skeleton-rows">
-          <div class="skeleton-btn"></div>
-          <div class="skeleton-btn"></div>
-          <div class="skeleton-btn"></div>
+        <div class="skeleton-bar" style="width: 35%;"></div>
+        <div class="skeleton-bar" style="width: 60%;"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div class="skeleton-bar" style="height: 48px;"></div>
+          <div class="skeleton-bar" style="height: 48px;"></div>
         </div>
       </div>
       <div class="skeleton-card">
-        <div class="skeleton-line w-32"></div>
-        <div class="skeleton-line w-56"></div>
-        <div class="skeleton-rows">
-          <div class="skeleton-btn"></div>
-          <div class="skeleton-btn"></div>
-        </div>
-      </div>`;
-    list.appendChild(skeleton);
+        <div class="skeleton-bar" style="width: 25%;"></div>
+        <div class="skeleton-bar" style="width: 50%;"></div>
+      </div>
+    `;
     return;
   }
+
   if (state.apps.length === 0) {
     empty.classList.remove('hidden');
+    noSearch.classList.add('hidden');
     return;
   }
   empty.classList.add('hidden');
 
-  for (const app of state.apps) {
-    const card = document.createElement('section');
-    card.className = 'card';
-    card.dataset.appId = app.id;
-
-    const head = document.createElement('div');
-    head.className = 'card-head';
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const titleRow = document.createElement('div');
-    titleRow.className = 'card-title-row';
-    const name = document.createElement('h2');
-    name.className = 'card-name';
-    name.textContent = app.name;
-    const id = document.createElement('span');
-    id.className = 'card-id';
-    id.textContent = app.id;
-    titleRow.append(name, id);
-    info.appendChild(titleRow);
-
-    if (app.description) {
-      const desc = document.createElement('p');
-      desc.className = 'card-desc';
-      desc.textContent = app.description;
-      info.appendChild(desc);
-    }
-
-    const meta = document.createElement('div');
-    meta.className = 'card-meta';
-    if (app.url) {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      const a = document.createElement('a');
-      a.href = app.url;
-      a.target = '_blank';
-      a.rel = 'noreferrer';
-      a.textContent = app.url.replace(/^https?:\/\//, '');
-      chip.appendChild(a);
-      meta.appendChild(chip);
-    }
-    if (app.dir) {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = app.dir;
-      meta.appendChild(chip);
-    }
-    info.appendChild(meta);
-
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    const editBtn = document.createElement('button');
-    editBtn.className = 'icon-btn';
-    editBtn.textContent = t('edit');
-    editBtn.addEventListener('click', () => openAppForm(app));
-    const delBtn = document.createElement('button');
-    delBtn.className = 'icon-btn';
-    delBtn.textContent = t('delete');
-    delBtn.addEventListener('click', () => deleteApp(app));
-    actions.append(editBtn, delBtn);
-
-    head.append(info, actions);
-    card.appendChild(head);
-
-    const buttonsWrap = document.createElement('div');
-    buttonsWrap.className = 'buttons';
-    for (const button of app.buttons) {
-      buttonsWrap.appendChild(renderButton(app, button));
-    }
-    const addBtn = document.createElement('button');
-    addBtn.className = 'ghost-btn';
-    addBtn.textContent = `+ ${t('addButton')}`;
-    addBtn.addEventListener('click', () => openButtonForm(app, null));
-    buttonsWrap.appendChild(addBtn);
-    card.appendChild(buttonsWrap);
-
-    card.appendChild(renderAppLogs(app));
-
-    list.appendChild(card);
-  }
-}
-
-/** 项目级执行记录区：约 7 行、可滚动、新日志自动滚到底，上翻暂停跟随 */
-function renderAppLogs(app) {
-  const wrap = document.createElement('div');
-  wrap.className = 'app-logs';
-  const header = document.createElement('div');
-  header.className = 'app-logs-header';
-  header.textContent = t('execRecords');
-  wrap.appendChild(header);
-
-  const box = document.createElement('div');
-  box.className = 'app-logs-box';
-  box.dataset.appId = app.id;
-
-  const saved = state.appLogs[app.id] || { follow: true, scrollTop: 0 };
-  state.appLogs[app.id] = saved;
-
-  box.addEventListener('scroll', () => {
-    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    saved.follow = nearBottom;
-    if (!nearBottom) saved.scrollTop = box.scrollTop;
-  });
-
-  // 上翻查看历史时暂停跟随；移出区域（失焦）恢复跟随最新
-  box.addEventListener('mouseenter', () => {
-    saved.follow = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  });
-  box.addEventListener('mouseleave', () => {
-    if (!saved.follow) {
-      saved.follow = true;
-      box.scrollTop = box.scrollHeight;
-    }
-  });
-
-  const load = async () => {
-    try {
-      const res = await api(`/api/apps/${encodeURIComponent(app.id)}/logs`);
-      renderLogEntries(box, app.id, res.entries);
-      box.dataset.lastKey = res.entries.map((e) => `${e.id}:${e.finishedAt}`).join('|');
-    } catch {
-      // 静默失败，下次轮询重试
-    }
-  };
-  load();
-  wrap.appendChild(box);
-  return wrap;
-}
-
-function renderLogEntries(box, appId, entries) {
-  const saved = state.appLogs[appId] || { follow: true, scrollTop: 0 };
-  const stickBottom = saved.follow;
-  const scrollTop = saved.scrollTop;
-
-  box.innerHTML = '';
-  if (!entries || entries.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'app-logs-empty';
-    empty.textContent = t('noHistory');
-    box.appendChild(empty);
+  const filtered = getFilteredApps();
+  if (filtered.length === 0) {
+    noSearch.classList.remove('hidden');
     return;
   }
-  for (const e of [...entries].reverse()) {
-    const row = document.createElement('div');
-    row.className = `log-row ${e.success ? 'ok' : 'fail'}`;
-    const time = document.createElement('span');
-    time.className = 'log-time';
-    time.textContent = new Date(e.startedAt).toLocaleTimeString();
-    const label = document.createElement('span');
-    label.className = 'log-label';
-    label.textContent = e.label || '';
-    const status = document.createElement('span');
-    status.className = 'log-status';
-    status.textContent = e.killed ? t('killed') : (e.success ? `✓ ${e.exitCode}` : `✗ ${e.exitCode}`);
-    const sum = document.createElement('span');
-    sum.className = 'log-summary';
-    sum.textContent = e.summary || '';
-    row.append(time, label, status, sum);
+  noSearch.classList.add('hidden');
 
-    // 点击行展开完整输出
-    if (e.output) {
-      row.classList.add('expandable');
-      row.addEventListener('click', () => {
-        const expanded = row.nextElementSibling;
-        if (expanded && expanded.classList.contains('log-expanded')) {
-          expanded.remove();
-          row.classList.remove('open');
-          return;
-        }
-        const pre = document.createElement('pre');
-        pre.className = 'log-expanded';
-        pre.textContent = e.output;
-        row.insertAdjacentElement('afterend', pre);
-        row.classList.add('open');
-      });
-    }
-
-    box.appendChild(row);
-  }
-  if (stickBottom) {
-    box.scrollTop = box.scrollHeight;
-  } else {
-    box.scrollTop = scrollTop;
+  for (const app of filtered) {
+    list.appendChild(createAppCard(app));
+    if (app.port) probeAppStatus(app.id);
   }
 }
 
-function renderButton(app, button) {
+/* ==========================================================================
+   Card Component Builder
+   ========================================================================== */
+
+function createAppCard(app) {
+  const card = document.createElement('section');
+  card.className = 'card';
+  card.dataset.appId = app.id;
+
+  // 1. Card Header
+  const head = document.createElement('div');
+  head.className = 'card-head';
+
+  const info = document.createElement('div');
+  info.className = 'card-main-info';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'card-title-row';
+
+  const name = document.createElement('h2');
+  name.className = 'card-name';
+  name.textContent = app.name;
+
+  // 运行状态点：有 port 时显示探活状态（online/offline/未知）
+  if (app.port) {
+    const statusDot = document.createElement('span');
+    statusDot.className = 'probe-dot unknown';
+    statusDot.dataset.appId = app.id;
+    statusDot.title = t('offline');
+    titleRow.appendChild(statusDot);
+  }
+
+  const idBadge = document.createElement('span');
+  idBadge.className = 'card-id-badge';
+  idBadge.textContent = app.id;
+  idBadge.title = t('copyAppId');
+  idBadge.addEventListener('click', () => copyText(app.id, `${t('copied')}: ${app.id}`));
+
+  titleRow.append(name, idBadge);
+  info.appendChild(titleRow);
+
+  if (app.description) {
+    const desc = document.createElement('p');
+    desc.className = 'card-desc';
+    desc.textContent = app.description;
+    info.appendChild(desc);
+  }
+
+  // Meta Chips: URL, Dir (Port is merged with URL to avoid redundancy)
+  const chips = document.createElement('div');
+  chips.className = 'card-meta-chips';
+
+  if (app.url) {
+    const chip = document.createElement('span');
+    chip.className = 'meta-chip';
+    const a = document.createElement('a');
+    a.href = app.url;
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    a.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      <span>${app.url.replace(/^https?:\/\//, '')}</span>
+    `;
+    chip.appendChild(a);
+    chips.appendChild(chip);
+  }
+
+  // Only show separate port badge if no URL is configured or URL doesn't contain this port
+  if (app.port && (!app.url || !app.url.includes(String(app.port)))) {
+    const portChip = document.createElement('span');
+    portChip.className = 'meta-chip clickable';
+    portChip.title = t('copyPort');
+    portChip.innerHTML = `<span>:${app.port}</span>`;
+    portChip.addEventListener('click', () => copyText(String(app.port), `${t('copied')} :${app.port}`));
+    chips.appendChild(portChip);
+  }
+
+  if (app.dir) {
+    const dirChip = document.createElement('span');
+    dirChip.className = 'meta-chip clickable';
+    dirChip.title = `${t('copyDir')}: ${app.dir}`;
+    dirChip.innerHTML = `
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span>${formatRelativeDir(app.dir)}</span>
+    `;
+    dirChip.addEventListener('click', () => copyText(app.dir, `${t('copied')}: ${app.dir}`));
+    chips.appendChild(dirChip);
+  }
+
+  info.appendChild(chips);
+
+  // Actions on right: + Button, Edit, Delete
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'ghost-btn';
+  addBtn.innerHTML = `<span>+ ${t('addButton')}</span>`;
+  addBtn.addEventListener('click', () => openButtonForm(app, null));
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'icon-btn';
+  editBtn.textContent = t('edit');
+  editBtn.addEventListener('click', () => openAppForm(app));
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'icon-btn';
+  delBtn.textContent = t('delete');
+  delBtn.addEventListener('click', () => deleteApp(app));
+
+  actions.append(addBtn, editBtn, delBtn);
+  head.append(info, actions);
+  card.appendChild(head);
+
+  // 2. Action Tiles Section
+  const btnSec = document.createElement('div');
+  btnSec.className = 'card-buttons-section';
+
+  const grid = document.createElement('div');
+  grid.className = 'buttons-grid';
+
+  for (const button of app.buttons) {
+    grid.appendChild(createActionTile(app, button));
+  }
+
+  if (app.buttons.length === 0) {
+    const addPrompt = document.createElement('button');
+    addPrompt.className = 'add-tile-btn';
+    addPrompt.textContent = `+ ${t('addButton')}`;
+    addPrompt.addEventListener('click', () => openButtonForm(app, null));
+    grid.appendChild(addPrompt);
+  }
+
+  btnSec.appendChild(grid);
+  card.appendChild(btnSec);
+
+  // 3. Activity Strip (Bottom)
+  const strip = createCardActivityStrip(app);
+  card.appendChild(strip);
+
+  // 4. Inline Collapsible Logs Tray (if expanded)
+  if (state.expandedLogs.has(app.id)) {
+    const tray = createCardLogsTray(app);
+    card.appendChild(tray);
+  }
+
+  return card;
+}
+
+/* ==========================================================================
+   Action Tile Builder
+   ========================================================================== */
+
+function createActionTile(app, button) {
   const tile = document.createElement('div');
-  tile.className = 'button-tile';
-  const running = button.state === 'running';
+  const isRunning = button.state === 'running';
+  tile.className = `action-tile ${isRunning ? 'is-running' : ''}`;
+  tile.dataset.buttonId = button.id;
+
+  const left = document.createElement('div');
+  left.className = 'tile-left';
 
   const dot = document.createElement('span');
-  dot.className = `dot ${statusDot(button)}`;
-  dot.title = running ? t('running') : '';
+  dot.className = `tile-status-dot ${isRunning ? 'running' : 'idle'}`;
+  left.appendChild(dot);
 
-  const main = document.createElement('div');
-  main.className = 'tile-main';
-  const label = document.createElement('div');
+  const info = document.createElement('div');
+  info.className = 'tile-info';
+
+  const head = document.createElement('div');
+  head.className = 'tile-head';
+
+  const label = document.createElement('span');
   label.className = 'tile-label';
   label.textContent = button.label;
-  const command = document.createElement('div');
-  command.className = 'tile-command';
-  command.textContent = button.command;
-  command.title = button.command;
-  main.append(label, command);
+  label.title = button.label;
 
-  tile.append(dot, main);
+  const tag = document.createElement('span');
+  tag.className = `type-tag ${button.type === 'managed' ? 'managed' : 'exec'}`;
+  tag.textContent = button.type === 'managed' ? 'pm2' : 'exec';
 
-  if (running) {
-    const stop = document.createElement('button');
-    stop.className = 'icon-btn';
-    stop.textContent = '■';
-    stop.title = t('cancel');
-    stop.addEventListener('click', () => cancelRun(app, button));
-    tile.appendChild(stop);
+  head.append(label, tag);
+  info.appendChild(head);
+
+  if (button.command) {
+    const cmd = document.createElement('div');
+    cmd.className = 'tile-command';
+    cmd.textContent = button.command;
+    cmd.title = `${t('copyCommand')}: ${button.command}`;
+    cmd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyText(button.command, `${t('copied')}: ${button.command}`);
+    });
+    info.appendChild(cmd);
+  }
+
+  left.appendChild(info);
+  tile.appendChild(left);
+
+  // Controls (Trigger + Edit)
+  const controls = document.createElement('div');
+  controls.className = 'tile-controls';
+
+  const trigger = document.createElement('button');
+  trigger.className = `btn-trigger ${isRunning ? 'stop' : ''}`;
+  if (isRunning) {
+    trigger.innerHTML = `<span>■</span> <span>${t('stop')}</span>`;
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelRun(app, button);
+    });
+  } else {
+    trigger.innerHTML = `<span>▶</span> <span>${t('run')}</span>`;
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runButton(app, button);
+    });
   }
 
   const edit = document.createElement('button');
-  edit.className = 'icon-btn';
-  edit.textContent = t('edit');
-  edit.addEventListener('click', () => openButtonForm(app, button));
-  tile.appendChild(edit);
-
-  tile.addEventListener('click', (e) => {
-    if (e.target.closest('button')) return;
-    runButton(app, button);
+  edit.className = 'btn-tile-edit';
+  edit.title = t('editButton');
+  edit.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  edit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openButtonForm(app, button);
   });
+
+  controls.append(trigger, edit);
+  tile.appendChild(controls);
 
   return tile;
 }
 
-/* ---------- drawer ---------- */
+/* ==========================================================================
+   Activity Strip & Tray Builders
+   ========================================================================== */
+
+function createCardActivityStrip(app) {
+  const strip = document.createElement('div');
+  strip.className = 'card-activity-strip';
+
+  const summary = document.createElement('div');
+  summary.className = 'activity-summary';
+
+  const tag = document.createElement('span');
+  tag.className = 'activity-tag hidden';
+
+  const time = document.createElement('span');
+  time.className = 'activity-time';
+
+  const text = document.createElement('span');
+  text.className = 'activity-text';
+  text.textContent = t('noHistory');
+
+  summary.append(tag, time, text);
+  strip.appendChild(summary);
+
+  const logsBtn = document.createElement('button');
+  const isExpanded = state.expandedLogs.has(app.id);
+  logsBtn.className = 'activity-btn';
+  logsBtn.innerHTML = `<span>${t('logs')}</span> <span>${isExpanded ? '▾' : '▸'}</span>`;
+  logsBtn.addEventListener('click', () => toggleLogsTray(app.id));
+
+  strip.appendChild(logsBtn);
+
+  // Initial fetch for strip text
+  api(`/api/apps/${encodeURIComponent(app.id)}/logs`).then((res) => {
+    const latest = res.entries?.[0];
+    if (!latest) return;
+    tag.classList.remove('hidden');
+    if (latest.killed) {
+      tag.className = 'activity-tag fail';
+      tag.textContent = t('killed');
+    } else if (latest.success) {
+      tag.className = 'activity-tag ok';
+      tag.textContent = `✓ 0`;
+    } else {
+      tag.className = 'activity-tag fail';
+      tag.textContent = `✗ ${latest.exitCode ?? 1}`;
+    }
+    time.textContent = new Date(latest.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    text.textContent = `${latest.label || ''}: ${latest.summary || 'done'}`;
+  }).catch(() => {});
+
+  return strip;
+}
+
+function toggleLogsTray(appId) {
+  if (state.expandedLogs.has(appId)) {
+    state.expandedLogs.delete(appId);
+  } else {
+    state.expandedLogs.add(appId);
+  }
+  render();
+}
+
+function createCardLogsTray(app) {
+  const tray = document.createElement('div');
+  tray.className = 'card-logs-tray';
+
+  api(`/api/apps/${encodeURIComponent(app.id)}/logs`).then((res) => {
+    renderLogsTrayEntries(tray, app.id, res.entries || []);
+  }).catch(() => {
+    tray.textContent = t('noHistory');
+  });
+
+  return tray;
+}
+
+function renderLogsTrayEntries(tray, appId, entries) {
+  tray.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    tray.innerHTML = `<div style="color: var(--text-muted); padding: 8px;">${t('noHistory')}</div>`;
+    return;
+  }
+
+  for (const e of entries) {
+    const row = document.createElement('div');
+    row.className = 'tray-row';
+
+    const time = document.createElement('span');
+    time.style.color = 'var(--text-muted)';
+    time.style.flexShrink = '0';
+    time.textContent = new Date(e.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const lbl = document.createElement('span');
+    lbl.style.fontWeight = '600';
+    lbl.style.flexShrink = '0';
+    lbl.textContent = e.label || '';
+
+    const status = document.createElement('span');
+    status.style.fontWeight = '600';
+    status.style.flexShrink = '0';
+    status.style.color = e.killed ? 'var(--fail)' : (e.success ? 'var(--ok)' : 'var(--fail)');
+    status.textContent = e.killed ? t('killed') : (e.success ? `✓ ${e.exitCode}` : `✗ ${e.exitCode}`);
+
+    const sum = document.createElement('span');
+    sum.style.color = 'var(--text-secondary)';
+    sum.style.overflow = 'hidden';
+    sum.style.textOverflow = 'ellipsis';
+    sum.style.whiteSpace = 'nowrap';
+    sum.style.flex = '1';
+    sum.textContent = e.summary || '';
+
+    const arrow = document.createElement('span');
+    arrow.style.color = 'var(--text-muted)';
+    arrow.style.flexShrink = '0';
+    const isOpen = state.expandedLogRows.has(e.id);
+    arrow.textContent = isOpen ? '▾' : '▸';
+
+    row.append(time, lbl, status, sum, arrow);
+    tray.appendChild(row);
+
+    if (isOpen && e.output) {
+      const out = document.createElement('pre');
+      out.className = 'tray-output-block';
+      out.textContent = e.output;
+      tray.appendChild(out);
+    }
+
+    row.addEventListener('click', () => {
+      if (state.expandedLogRows.has(e.id)) {
+        state.expandedLogRows.delete(e.id);
+      } else {
+        state.expandedLogRows.add(e.id);
+      }
+      renderLogsTrayEntries(tray, appId, entries);
+    });
+  }
+}
+
+/* ==========================================================================
+   Drawer Form Management (App & Button Forms)
+   ========================================================================== */
 
 let drawerCleanup = null;
 
@@ -400,10 +714,12 @@ function openDrawer({ title, body, foot }) {
   const titleEl = document.createElement('div');
   titleEl.className = 'drawer-title';
   titleEl.textContent = title;
+
   const closeBtn = document.createElement('button');
-  closeBtn.className = 'icon-btn';
+  closeBtn.className = 'popover-close-btn';
   closeBtn.textContent = '×';
   closeBtn.addEventListener('click', closeDrawer);
+
   head.append(titleEl, closeBtn);
   drawer.appendChild(head);
 
@@ -436,9 +752,7 @@ function closeDrawer() {
   if (drawerCleanup) drawerCleanup();
 }
 
-$('#overlay').addEventListener('click', closeDrawer);
-
-function field(labelKey, inputEl, hintKey) {
+function formField(labelKey, inputEl, hintKey) {
   const wrap = document.createElement('div');
   wrap.className = 'field';
   const label = document.createElement('label');
@@ -468,31 +782,33 @@ function textArea(value = '') {
   return textarea;
 }
 
-/* ---------- app form ---------- */
-
+/* App Create / Edit Form */
 function openAppForm(app = null) {
   const isEdit = !!app;
   const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+  body.style.gap = '14px';
 
-  const nameInput = textInput(app?.name);
-  body.appendChild(field('appName', nameInput));
+  const nameInput = textInput(app?.name, '例如: 个人博客或数据中台');
+  body.appendChild(formField('appName', nameInput));
 
-  const idInput = textInput(app?.id);
+  const idInput = textInput(app?.id, '例如: blog');
   idInput.disabled = isEdit;
-  body.appendChild(field('appId', idInput, 'appIdHint'));
+  body.appendChild(formField('appId', idInput, 'appIdHint'));
 
   const descInput = textArea(app?.description);
-  body.appendChild(field('appDesc', descInput));
+  body.appendChild(formField('appDesc', descInput));
 
-  const dirInput = textInput(app?.dir);
-  body.appendChild(field('appDir', dirInput, 'appDirHint'));
+  const dirInput = textInput(app?.dir, '/Users/frazier/Project/blog');
+  body.appendChild(formField('appDir', dirInput, 'appDirHint'));
 
   const urlInput = textInput(app?.url, 'http://localhost:3000');
-  body.appendChild(field('appUrl', urlInput));
+  body.appendChild(formField('appUrl', urlInput));
 
-  const portInput = textInput(app?.port ?? '');
+  const portInput = textInput(app?.port ?? '', '3000');
   portInput.inputMode = 'numeric';
-  body.appendChild(field('appPort', portInput, 'appPortHint'));
+  body.appendChild(formField('appPort', portInput, 'appPortHint'));
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'primary-btn';
@@ -507,6 +823,7 @@ function openAppForm(app = null) {
       port: portInput.value.trim() ? Number(portInput.value.trim()) : null,
     };
     if (!payload.name) return toast(t('nameRequired'), { error: true });
+
     try {
       if (isEdit) {
         await api(`/api/apps/${encodeURIComponent(id)}`, {
@@ -532,36 +849,56 @@ function openAppForm(app = null) {
   openDrawer({ title: t(isEdit ? 'editApp' : 'addApp'), body, foot: [saveBtn] });
 }
 
-async function deleteApp(app) {
-  if (!confirm(t('confirmDeleteApp').replace('{name}', app.name))) return;
-  try {
-    await api(`/api/apps/${encodeURIComponent(app.id)}`, { method: 'DELETE' });
-    toast(t('deleteOk'));
-    loadApps();
-  } catch (err) {
-    toast(t('requestFailed') + err.message, { error: true });
-  }
-}
-
-/* ---------- button form ---------- */
-
+/* Button Create / Edit Form */
 function openButtonForm(app, button = null) {
   const isEdit = !!button;
   const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+  body.style.gap = '14px';
 
-  const labelInput = textInput(button?.label);
-  body.appendChild(field('buttonLabel', labelInput));
+  const labelInput = textInput(button?.label, '例如: 启动服务');
+  body.appendChild(formField('buttonLabel', labelInput));
 
-  const idInput = textInput(button?.id);
+  const idInput = textInput(button?.id, '例如: start');
   idInput.disabled = isEdit;
-  body.appendChild(field('buttonId', idInput, 'appIdHint'));
+  body.appendChild(formField('buttonId', idInput, 'appIdHint'));
 
+  // Type selector (managed / exec)
+  const typeSelect = document.createElement('select');
+  typeSelect.innerHTML = `
+    <option value="exec" ${button?.type !== 'managed' ? 'selected' : ''}>${t('execBadge')} (一次性运行，捕获输出与退出码)</option>
+    <option value="managed" ${button?.type === 'managed' ? 'selected' : ''}>${t('managedBadge')} (常驻服务，pm2 守护/崩溃自启)</option>
+  `;
+  body.appendChild(formField('buttonType', typeSelect));
+
+  // Command input + Presets
   const commandInput = textArea(button?.command);
-  body.appendChild(field('buttonCommand', commandInput));
+  const cmdField = formField('buttonCommand', commandInput);
 
-  const cwdInput = textInput(button?.cwd ?? '');
-  cwdInput.placeholder = app.dir ?? '';
-  body.appendChild(field('buttonCwd', cwdInput, 'buttonCwdHint'));
+  const tplWrap = document.createElement('div');
+  tplWrap.className = 'template-chips';
+  const presets = [
+    { label: 'npm run dev', cmd: 'npm run dev' },
+    { label: 'npm start', cmd: 'npm start' },
+    { label: 'python main.py', cmd: 'python main.py' },
+    { label: 'docker compose up', cmd: 'docker compose up -d' },
+    { label: 'git pull', cmd: 'git pull' },
+  ];
+  for (const p of presets) {
+    const chip = document.createElement('span');
+    chip.className = 'tpl-chip';
+    chip.textContent = p.label;
+    chip.addEventListener('click', () => {
+      commandInput.value = p.cmd;
+    });
+    tplWrap.appendChild(chip);
+  }
+  cmdField.appendChild(tplWrap);
+  body.appendChild(cmdField);
+
+  const cwdInput = textInput(button?.cwd ?? '', app.dir ?? '');
+  body.appendChild(formField('buttonCwd', cwdInput, 'buttonCwdHint'));
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'primary-btn';
@@ -570,18 +907,18 @@ function openButtonForm(app, button = null) {
     const id = isEdit ? button.id : (idInput.value.trim() || `btn-${Math.random().toString(36).slice(2, 8)}`);
     const payload = {
       label: labelInput.value.trim(),
+      type: typeSelect.value,
       command: commandInput.value.trim() || null,
       cwd: cwdInput.value.trim() || null,
     };
-    if (!payload.label) {
-      return toast(t('fieldsRequired'), { error: true });
-    }
+    if (!payload.label) return toast(t('fieldsRequired'), { error: true });
+
     const method = isEdit ? 'PATCH' : 'PUT';
     try {
       await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(id)}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, type: 'exec' }),
+        body: JSON.stringify(payload),
       });
       toast(t('saveOk'));
       closeDrawer();
@@ -613,14 +950,26 @@ function openButtonForm(app, button = null) {
   openDrawer({ title: t(isEdit ? 'editButton' : 'addButton'), body, foot });
 }
 
-/* ---------- run / cancel ---------- */
+/* Delete App Handler */
+async function deleteApp(app) {
+  if (!confirm(t('confirmDeleteApp').replace('{name}', app.name))) return;
+  try {
+    await api(`/api/apps/${encodeURIComponent(app.id)}`, { method: 'DELETE' });
+    toast(t('deleteOk'));
+    loadApps();
+  } catch (err) {
+    toast(t('requestFailed') + err.message, { error: true });
+  }
+}
 
+/* Run / Cancel Handlers */
 async function runButton(app, button) {
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/run`, { method: 'POST' });
     toast(t('started'));
     button.state = 'running';
-    render();
+    updateCardsTelemetry();
+    updateGlobalStats();
   } catch (err) {
     if (err.status === 409) toast(t('busy'), { error: true });
     else toast(t('requestFailed') + err.message, { error: true });
@@ -633,14 +982,23 @@ async function cancelRun(app, button) {
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/cancel`, { method: 'POST' });
     toast(t('cancelOk'));
+    refreshRunsIncremental();
   } catch (err) {
     toast(t('requestFailed') + err.message, { error: true });
   }
 }
 
-/* ---------- logs ---------- */
+/* ==========================================================================
+   Engine Hub Popover & System Toggles
+   ========================================================================== */
 
-/* ---------- system switches ---------- */
+function toggleEnginePopover() {
+  const pop = $('#enginePopover');
+  pop.classList.toggle('hidden');
+}
+
+$('#engineBtn').addEventListener('click', toggleEnginePopover);
+$('#closeEnginePopoverBtn').addEventListener('click', () => $('#enginePopover').classList.add('hidden'));
 
 async function waitForServer(maxSeconds = 15) {
   for (let i = 0; i < maxSeconds; i++) {
@@ -648,9 +1006,7 @@ async function waitForServer(maxSeconds = 15) {
     try {
       const response = await fetch('/api/health');
       if (response.ok) return true;
-    } catch {
-      // 服务未恢复，继续等待
-    }
+    } catch {}
   }
   return false;
 }
@@ -692,7 +1048,7 @@ $('#startupSwitch').addEventListener('change', async (e) => {
       body: JSON.stringify({ enabled }),
     });
     if (res.manual) {
-      showManual(res.manual, enabled);
+      showManualStartupDialog(res.manual, enabled);
       e.target.checked = false;
     } else {
       toast(enabled ? t('startupOn') : t('startupOff'));
@@ -706,63 +1062,161 @@ $('#startupSwitch').addEventListener('change', async (e) => {
   }
 });
 
-function showManual(command, enabled) {
+function showManualStartupDialog(command, enabled) {
   const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+  body.style.gap = '10px';
+
   const text = document.createElement('p');
   text.textContent = t(enabled ? 'manualStartup' : 'manualUnstartup');
-  text.style.marginBottom = '10px';
+
   const pre = document.createElement('pre');
-  pre.className = 'log-body';
-  pre.style.display = 'block';
+  pre.className = 'tray-output-block';
   pre.textContent = command;
+
   const copyBtn = document.createElement('button');
   copyBtn.className = 'ghost-btn';
   copyBtn.textContent = t('copy');
   copyBtn.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(command);
+    await copyText(command, t('copied'));
     copyBtn.textContent = t('copied');
   });
+
   body.append(text, pre, copyBtn);
   openDrawer({ title: t('startup'), body });
 }
 
-/* ---------- lang ---------- */
+/* ==========================================================================
+   Global Search, Shortcuts & Listeners
+   ========================================================================== */
 
+const searchInput = $('#searchInput');
+const clearSearchBtn = $('#clearSearchBtn');
+
+searchInput.addEventListener('input', (e) => {
+  state.searchQuery = e.target.value;
+  clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+  render();
+});
+
+clearSearchBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  state.searchQuery = '';
+  clearSearchBtn.classList.add('hidden');
+  render();
+  searchInput.focus();
+});
+
+$('#resetSearchBtn').addEventListener('click', () => {
+  searchInput.value = '';
+  state.searchQuery = '';
+  clearSearchBtn.classList.add('hidden');
+  render();
+});
+
+// Lang switcher
 $('#langBtn').addEventListener('click', () => {
   const next = currentLang === 'zh' ? 'en' : 'zh';
   setLang(next);
   $('#langBtn').textContent = t('langName');
+  updateEngineHubUI();
+  updateGlobalStats();
   render();
 });
-
 $('#langBtn').textContent = t('langName');
 
-/* ---------- copy AIUsage ---------- */
-
+// Copy AI Usage
 $('#copyAiUsageBtn').addEventListener('click', async () => {
   try {
     const res = await api('/api/aiusage');
-    await navigator.clipboard.writeText(res.content);
-    toast(t('aiUsageCopied'));
+    await copyText(res.content, t('aiUsageCopied'));
   } catch (err) {
     toast(t('requestFailed') + err.message, { error: true });
   }
 });
 
-/* ---------- polling ---------- */
-
-function refreshPolling() {
-  clearInterval(state.pollTimer);
-  state.pollTimer = setInterval(refreshRuns, 2000);
-}
-
+// App Add Action
 $('#addAppBtn').addEventListener('click', () => openAppForm());
 document.querySelector('[data-action="add-app"]').addEventListener('click', () => openAppForm());
+$('#overlay').addEventListener('click', closeDrawer);
 
+// Keyboard Shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeDrawer();
+  if (e.key === 'Escape') {
+    closeDrawer();
+    $('#enginePopover').classList.add('hidden');
+    if (document.activeElement === searchInput) {
+      searchInput.blur();
+    }
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  }
 });
 
-loadApps().catch((err) => toast(t('requestFailed') + err.message, { error: true }));
+// Close popover when clicked outside
+document.addEventListener('click', (e) => {
+  const pop = $('#enginePopover');
+  const btn = $('#engineBtn');
+  if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !btn.contains(e.target)) {
+    pop.classList.add('hidden');
+  }
+});
+
+// Dark / Light Mode Switcher
+function setMode(mode) {
+  document.documentElement.setAttribute('data-mode', mode);
+  localStorage.setItem('appdeck-mode', mode);
+  const moon = $('#modeIconMoon');
+  const sun = $('#modeIconSun');
+  if (moon && sun) {
+    moon.classList.toggle('hidden', mode === 'light');
+    sun.classList.toggle('hidden', mode === 'dark');
+  }
+}
+
+function initMode() {
+  const saved = localStorage.getItem('appdeck-mode') || 'dark';
+  setMode(saved);
+  $('#modeToggleBtn')?.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-mode') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    setMode(next);
+  });
+}
+
+// Theme Palette Switcher
+function setTheme(theme) {
+  if (theme === 'indigo') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  localStorage.setItem('appdeck-theme', theme);
+  $$('.theme-dot').forEach((dot) => {
+    dot.classList.toggle('active', dot.dataset.theme === theme);
+  });
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('appdeck-theme') || 'indigo';
+  setTheme(saved);
+  $$('.theme-dot').forEach((dot) => {
+    dot.addEventListener('click', () => setTheme(dot.dataset.theme));
+  });
+}
+
+/* ==========================================================================
+   Bootstrap Initialization
+   ========================================================================== */
+
+initMode();
+initTheme();
+loadApps();
 loadSystem();
-refreshPolling();
+clearInterval(state.pollTimer);
+state.pollTimer = setInterval(refreshRunsIncremental, 2000);
+startProbePolling();
