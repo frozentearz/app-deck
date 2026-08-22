@@ -112,7 +112,7 @@ async function teardownButton(pm2, store, runs, appId, button) {
   }
 }
 
-export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0) } = {}) {
+export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0), elevate = true } = {}) {
   const pm2 = new Pm2({ pm2Path });
   const runs = {};
   const historyQueues = new Map();
@@ -249,11 +249,11 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       try {
         let manual = null;
         if (enabled) {
-          const result = await pm2.startup();
+          const result = elevate ? await pm2.startupElevated() : await pm2.startup();
           manual = result.manual;
           if (!manual) await pm2.save();
         } else {
-          const result = await pm2.unstartup();
+          const result = elevate ? await pm2.unstartupElevated() : await pm2.unstartup();
           manual = result.manual;
           if (!manual) await pm2.save();
         }

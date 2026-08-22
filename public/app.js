@@ -564,7 +564,9 @@ $('#daemonSwitch').addEventListener('change', async (e) => {
 
 $('#startupSwitch').addEventListener('change', async (e) => {
   const enabled = e.target.checked;
+  e.target.disabled = true;
   try {
+    toast(t('waitingAuth'));
     const res = await api('/api/system/startup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -574,12 +576,14 @@ $('#startupSwitch').addEventListener('change', async (e) => {
       showManual(res.manual, enabled);
       e.target.checked = false;
     } else {
-      toast(t('saveOk'));
+      toast(enabled ? t('startupOn') : t('startupOff'));
     }
-    setTimeout(loadSystem, 1500);
+    await loadSystem();
   } catch (err) {
     e.target.checked = !enabled;
     toast(t('requestFailed') + err.message, { error: true });
+  } finally {
+    e.target.disabled = false;
   }
 });
 

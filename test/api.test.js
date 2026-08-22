@@ -9,7 +9,7 @@ import { createServer } from '../src/index.js';
 async function makeApi(t, { pm2Path, selfExit } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'appdeck-api-'));
   const store = await new Store({ dataDir }).init();
-  const server = await createServer({ store, pm2Path: pm2Path ?? join(tmpdir(), 'no-pm2'), publicDir: null, selfExit: selfExit ?? (() => {}) });
+  const server = await createServer({ store, pm2Path: pm2Path ?? join(tmpdir(), 'no-pm2'), publicDir: null, selfExit: selfExit ?? (() => {}), elevate: false });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -97,6 +98,71 @@ export class Pm2 {
     const text = stdout + stderr;
     const manual = text.split('\n').find((l) => /^sudo /.test(l.trim()))?.trim() ?? null;
     return { ok: true, manual };
+  }
+
+  /** macOS：pm2 强制要求 root 才执行 startup，绕过它——自己写 launchd plist + launchctl load（用户级，无需 sudo） */
+  async startupElevated() {
+    if (process.platform !== 'darwin') {
+      const { manual } = await this.startup();
+      return { ok: false, manual };
+    }
+    const pm2Bin = await this._resolvePm2Bin();
+    const user = userInfo().username;
+    const home = homedir();
+    const plistPath = join(home, 'Library', 'LaunchAgents', `pm2.${user}.plist`);
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>pm2.${user}</string>
+    <key>UserName</key>
+    <string>${user}</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/sh</string>
+      <string>-c</string>
+      <string>${pm2Bin} resurrect</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>${process.env.PATH}</string>
+      <key>PM2_HOME</key>
+      <string>${home}/.pm2</string>
+    </dict>
+  </dict>
+</plist>
+`;
+    await mkdir(join(home, 'Library', 'LaunchAgents'), { recursive: true });
+    await writeFile(plistPath, plist);
+    await runCli('/bin/launchctl', ['load', '-w', plistPath], { timeoutMs: 30000 });
+    return { ok: true, manual: null };
+  }
+
+  /** macOS：launchctl unload + 删 plist（用户级，无需 sudo） */
+  async unstartupElevated() {
+    if (process.platform !== 'darwin') {
+      const { manual } = await this.unstartup();
+      return { ok: false, manual };
+    }
+    const user = userInfo().username;
+    const plistPath = join(homedir(), 'Library', 'LaunchAgents', `pm2.${user}.plist`);
+    if (existsSync(plistPath)) {
+      await runCli('/bin/launchctl', ['unload', '-w', plistPath], { timeoutMs: 30000 });
+      await unlink(plistPath);
+    }
+    return { ok: true, manual: null };
+  }
+
+  async _resolvePm2Bin() {
+    if (this.pm2Path !== 'pm2') return this.pm2Path;
+    const { stdout } = await runCli('/usr/bin/which', ['pm2']);
+    return stdout.trim() || 'pm2';
   }
 
   startupStatus({ home = homedir(), user = userInfo().username, platform = process.platform } = {}) {
