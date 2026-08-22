@@ -271,7 +271,13 @@ function renderAppLogs(app) {
   });
 
   const load = async () => {
-    refreshAppLogs(app.id, document.querySelector(`.card[data-app-id="${app.id}"]`));
+    try {
+      const res = await api(`/api/apps/${encodeURIComponent(app.id)}/logs`);
+      renderLogEntries(box, app.id, res.entries);
+      box.dataset.lastKey = res.entries.map((e) => `${e.id}:${e.finishedAt}`).join('|');
+    } catch {
+      // 静默失败，下次轮询重试
+    }
   };
   load();
   wrap.appendChild(box);
