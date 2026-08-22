@@ -523,24 +523,42 @@ async function openLogs(app, button) {
 
 /* ---------- system switches ---------- */
 
+async function waitForServer(maxSeconds = 15) {
+  for (let i = 0; i < maxSeconds; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const response = await fetch('/api/health');
+      if (response.ok) return true;
+    } catch {
+      // 服务未恢复，继续等待
+    }
+  }
+  return false;
+}
+
 $('#daemonSwitch').addEventListener('change', async (e) => {
   const enabled = e.target.checked;
+  e.target.disabled = true;
   try {
-    const res = await api('/api/system/daemon', {
+    await api('/api/system/daemon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     });
-    if (enabled) {
-      toast(t('started'));
-      setTimeout(() => location.reload(), 2000);
+    toast(t('switching'));
+    const recovered = await waitForServer(15);
+    if (recovered) {
+      toast(enabled ? t('daemonOn') : t('daemonOff'));
+      await loadSystem();
+      await loadApps();
     } else {
-      toast(t('stopped'));
-      setTimeout(loadSystem, 1500);
+      toast(t('recoverTimeout'), { error: true });
     }
   } catch (err) {
     e.target.checked = !enabled;
     toast(t('requestFailed') + err.message, { error: true });
+  } finally {
+    e.target.disabled = false;
   }
 });
 

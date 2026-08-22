@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { Store } from '../src/store.js';
 import { createServer } from '../src/index.js';
 
@@ -340,6 +340,25 @@ test('POST /api/system/startup returns 503 when pm2 missing', async (t) => {
     body: JSON.stringify({ enabled: true }),
   });
   assert.equal(res.status, 503);
+});
+
+test('POST /api/system/daemon disable: calls pm2 stop (no auto-restart) then save', async (t) => {
+  const script = await fakePm2(`#!/bin/sh
+printf '%s\\n' "$@" >> "$(dirname "$0")/args.txt"
+`);
+  const api = await makeApi(t, { pm2Path: script });
+  const res = await api.fetch('/api/system/daemon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.enabled, false);
+  await new Promise((r) => setTimeout(r, 200));
+  const log = await readFile(join(dirname(script), 'args.txt'), 'utf8');
+  assert.ok(log.includes('stop') || log.includes('delete'));
+  assert.doesNotMatch(log, /restart/);
 });
 
 test('POST /api/system/daemon enable: starts app-deck then self-exits', async (t) => {

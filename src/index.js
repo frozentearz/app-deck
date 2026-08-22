@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -208,15 +209,31 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       daemonPending = true;
       try {
         if (enabled) {
+          // --no-autorestart：进程退出后 pm2 不自动重启（pm2 7 官方参数）
           await pm2.start({ name: 'app-deck', script: 'src/index.js', cwd: projectRoot });
           await pm2.save();
           send(res, 200, { enabled: true, manual: null });
           setTimeout(() => selfExit(), 500);
         } else {
           send(res, 200, { enabled: false, manual: null });
-          setTimeout(() => {
-            pm2.stop('app-deck').then(() => pm2.save()).catch(() => {});
-          }, 500);
+          if (process.env.NODE_APP_INSTANCE !== undefined) {
+            // 当前进程由 pm2 托管：先 spawn 独立子进程接棒端口，再显式 stop（不会自动重启）
+            const childEnv = { ...process.env };
+            delete childEnv.NODE_APP_INSTANCE;
+            const child = spawn(process.execPath, [join(projectRoot, 'src/index.js')], {
+              cwd: projectRoot,
+              detached: true,
+              stdio: 'ignore',
+              env: childEnv,
+            });
+            child.unref();
+            setTimeout(() => {
+              pm2.stop('app-deck').then(() => pm2.save()).catch(() => {});
+            }, 1500);
+          } else {
+            await pm2.stop('app-deck');
+            await pm2.save();
+          }
         }
       } catch (err) {
         send(res, 500, { error: err.message });
@@ -526,7 +543,19 @@ if (isMain) {
   const dataDir = process.env.APP_DECK_DATA_DIR ?? DEFAULT_DATA_DIR;
   const store = await new Store({ dataDir }).init();
   const server = createServer({ store });
-  server.listen(DEFAULT_PORT, () => {
-    console.log(`[app-deck] listening on http://localhost:${DEFAULT_PORT}`);
-  });
+  const listenWithRetry = (triesLeft) => {
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE' && triesLeft > 0) {
+        console.log(`[app-deck] port ${DEFAULT_PORT} busy, retrying in 500ms (${triesLeft} left)`);
+        setTimeout(() => listenWithRetry(triesLeft - 1), 500);
+      } else {
+        console.error(`[app-deck] cannot listen on ${DEFAULT_PORT}:`, err.message);
+        process.exit(1);
+      }
+    });
+    server.listen(DEFAULT_PORT, () => {
+      console.log(`[app-deck] listening on http://localhost:${DEFAULT_PORT}`);
+    });
+  };
+  listenWithRetry(10);
 }

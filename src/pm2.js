@@ -45,8 +45,10 @@ export class Pm2 {
     return runCli(this.pm2Path, args);
   }
 
-  async start({ name = PM2_NAME, script = 'src/index.js', cwd = process.cwd(), args = [] } = {}) {
+  async start({ name = PM2_NAME, script = 'src/index.js', cwd = process.cwd(), args = [], noAutorestart = true, noTreekill = true } = {}) {
     const cliArgs = ['start', script, '--name', name, '--cwd', cwd];
+    if (noAutorestart) cliArgs.push('--no-autorestart');
+    if (noTreekill) cliArgs.push('--no-treekill');
     if (args.length > 0) cliArgs.push('--', ...args);
     await this._spawn(cliArgs);
   }

@@ -59,6 +59,15 @@ echo "sudo env PATH=\\$PATH:/opt/homebrew/bin pm2 startup launchd -u frazier --h
   assert.match(res.manual, /^sudo /);
 });
 
+test('start passes --no-autorestart and --no-treekill to pm2 CLI', async () => {
+  const { script, dir } = await fakePm2(RECORD_ARGS);
+  const pm2 = new Pm2({ pm2Path: script });
+  await pm2.start({ name: 'app-deck', script: 'src/index.js', cwd: '/x' });
+  const args = await readFile(join(dir, 'bin', 'args.txt'), 'utf8');
+  assert.ok(args.includes('--no-autorestart'));
+  assert.ok(args.includes('--no-treekill'));
+});
+
 test('stop/delete/save call the right subcommands', async () => {
   const { script, dir } = await fakePm2(RECORD_ARGS);
   const pm2 = new Pm2({ pm2Path: script });
