@@ -65,6 +65,8 @@ function normalizeApp(input, { id } = {}) {
     dir: input.dir ?? null,
     url: input.url ?? null,
     port: input.port ?? null,
+    pinned: input.pinned ?? false,
+    pinnedAt: input.pinnedAt ?? null,
     buttons: [],
   };
   for (const b of input.buttons ?? []) {
@@ -294,7 +296,11 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
 
   async function handleApps(req, res) {
     if (req.method === 'GET') {
-      const apps = store.listApps();
+      let apps = store.listApps();
+      // 置顶排序：pinned 在前（按 pinnedAt 倒序，最新置顶最前），非 pinned 保持原序
+      const pinned = apps.filter((a) => a.pinned).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
+      const unpinned = apps.filter((a) => !a.pinned);
+      apps = [...pinned, ...unpinned];
       const views = [];
       for (const a of apps) views.push(await appView(a));
       send(res, 200, views);
@@ -345,6 +351,11 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       if (!app) return notFound(res);
       const body = await readBody(req);
       const merged = normalizeApp({ ...app, ...body, id: appId }, { id: appId });
+      // 置顶/取消置顶：置顶时刷新 pinnedAt，取消置顶清空
+      if ('pinned' in body) {
+        merged.pinned = body.pinned === true;
+        merged.pinnedAt = merged.pinned ? Date.now() : null;
+      }
       store.upsertApp(merged);
       await store.save();
       send(res, 200, merged);

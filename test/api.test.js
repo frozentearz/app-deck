@@ -148,6 +148,48 @@ test('GET /api/apps/:id/status without port returns online: null', async (t) => 
   assert.equal(res.online, null);
 });
 
+test('GET /api/apps: pinned first ordered by pin time desc (latest pin on top)', async (t) => {
+  const api = await makeApi(t);
+  const base = { ...SAMPLE_APP };
+  await api.fetch('/api/apps/a', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...base, name: 'A' }) });
+  await api.fetch('/api/apps/b', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...base, name: 'B' }) });
+  await api.fetch('/api/apps/c', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...base, name: 'C' }) });
+
+  // 初始顺序 a, b, c
+  let apps = await (await api.fetch('/api/apps')).json();
+  assert.deepEqual(apps.map((x) => x.id), ['a', 'b', 'c']);
+
+  // 先置顶 c，再置顶 a（a 更新，应排 c 前）
+  await api.fetch('/api/apps/c', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
+  await new Promise((r) => setTimeout(r, 30));
+  await api.fetch('/api/apps/a', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
+
+  apps = await (await api.fetch('/api/apps')).json();
+  const ids = apps.map((x) => x.id);
+  // a 最新置顶 → 最前；c 次之；b 未置顶在最后
+  assert.deepEqual(ids, ['a', 'c', 'b']);
+
+  // 重新置顶 c → c 排到最前
+  await new Promise((r) => setTimeout(r, 30));
+  await api.fetch('/api/apps/c', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
+  apps = await (await api.fetch('/api/apps')).json();
+  assert.deepEqual(apps.map((x) => x.id), ['c', 'a', 'b']);
+
+  // 取消置顶 a → 非置顶组末尾
+  await api.fetch('/api/apps/a', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: false }) });
+  apps = await (await api.fetch('/api/apps')).json();
+  assert.deepEqual(apps.map((x) => x.id), ['c', 'a', 'b']);
+});
+
+test('PATCH app supports pinned field', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(SAMPLE_APP) });
+  const res = await api.fetch('/api/apps/blog', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned: true }) });
+  assert.equal(res.status, 200);
+  const app = await (await api.fetch('/api/apps/blog')).json();
+  assert.equal(app.pinned, true);
+});
+
 test('GET /api/apps/:id returns app, 404 when missing', async (t) => {
   const api = await makeApi(t);
   await api.fetch('/api/apps/blog', {
