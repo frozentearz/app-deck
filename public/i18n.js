@@ -92,6 +92,11 @@ const I18N = {
     totalButtons: '个按钮',
     onlineServices: '服务在线',
     activeRuns: '任务运行中',
+    pin: '置顶',
+    unpin: '取消置顶',
+    pinned: '已置顶',
+    pinSuccess: '已置顶',
+    unpinSuccess: '已取消置顶',
   },
   en: {
     daemon: 'Daemon',
@@ -186,6 +191,11 @@ const I18N = {
     totalButtons: 'buttons',
     onlineServices: 'online',
     activeRuns: 'running',
+    pin: 'Pin',
+    unpin: 'Unpin',
+    pinned: 'Pinned',
+    pinSuccess: 'Pinned',
+    unpinSuccess: 'Unpinned',
   },
 };
 
