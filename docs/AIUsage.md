@@ -86,7 +86,7 @@ AI 接入 App-Deck 的标准流程：
 | `id` | string | ✅ | 按钮唯一标识（app 内唯一），不可变 |
 | `label` | string | ✅ | 显示名称 |
 | `type` | string | ✅ | `managed` = pm2 托管（守护/自启/崩溃重启）；`exec` = 一次性执行 |
-| `command` | string | ✅ | 执行的 shell 命令 |
+| `command` | string | ❌ | 执行的 shell 命令（可先留空，未配置时点击按钮返回 400 提示） |
 | `cwd` | string | ❌ | 工作目录，缺省继承 `app.dir` |
 | `shell` | boolean | ✅ | 是否经 shell 执行（默认 `true`） |
 
@@ -171,41 +171,43 @@ AI 接入 App-Deck 的标准流程：
 ### 6.1 登记一个新项目（幂等 PUT）
 
 ```bash
-curl -X PUT http://localhost:6969/api/apps/blog \
+curl -X PUT http://localhost:6969/api/apps/tomcat \
   -H 'Content-Type: application/json' \
   -d '{
-    "name": "博客系统",
-    "description": "个人博客，Vue + Node 全栈",
-    "dir": "/Users/frazier/Project/blog",
-    "url": "http://localhost:3000",
+    "name": "tomcat",
+    "description": "Tomcat 服务器",
+    "dir": "/Users/frazier/Project/apache-tomcat-9.0.100",
+    "url": "http://localhost:8080",
+    "port": 8080,
     "buttons": [
-      { "id": "start",   "label": "启动",   "type": "managed", "command": "npm run dev" },
-      { "id": "stop",    "label": "停止",   "type": "managed", "command": "npm run dev" },
-      { "id": "restart", "label": "重启",   "type": "managed", "command": "npm run dev" },
-      { "id": "enter",   "label": "进入",   "type": "exec",    "command": "open http://localhost:3000" },
-      { "id": "deploy",  "label": "一键部署", "type": "exec",    "command": "bash scripts/deploy.sh" }
+      { "id": "start",   "label": "启动",   "type": "exec", "command": "bin/catalina.sh start" },
+      { "id": "stop",    "label": "停止",   "type": "exec", "command": "bin/catalina.sh stop" },
+      { "id": "restart", "label": "重启",   "type": "exec", "command": "bin/catalina.sh restart" },
+      { "id": "logs",    "label": "查看日志", "type": "exec", "command": "tail -f logs/catalina.out" }
     ]
   }'
 ```
 
+> 未安装或未配置：`dir` 和 `command` 可留空先登记占位，点击按钮时返回 `400 { "error": "请先配置项目路径与项目按钮的脚本" }`，在 UI 编辑表单里补全即可。
+
 ### 6.2 追加一个按钮（幂等）
 
 ```bash
-curl -X PUT http://localhost:6969/api/apps/blog/buttons/backup \
+curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/clean \
   -H 'Content-Type: application/json' \
-  -d '{ "label": "备份数据库", "type": "exec", "command": "bash scripts/backup.sh" }'
+  -d '{ "label": "清理缓存", "type": "exec", "command": "rm -rf work/Catalina" }'
 ```
 
 ### 6.3 执行按钮
 
 ```bash
-curl -X POST http://localhost:6969/api/apps/blog/buttons/start/run
+curl -X POST http://localhost:6969/api/apps/tomcat/buttons/start/run
 ```
 
 ### 6.4 查看执行结果
 
 ```bash
-curl http://localhost:6969/api/apps/blog/buttons/start/logs
+curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 ```
 
 ## 7. 幂等与并发

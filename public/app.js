@@ -422,10 +422,10 @@ function openButtonForm(app, button = null) {
     const id = isEdit ? button.id : (idInput.value.trim() || `btn-${Math.random().toString(36).slice(2, 8)}`);
     const payload = {
       label: labelInput.value.trim(),
-      command: commandInput.value.trim(),
+      command: commandInput.value.trim() || null,
       cwd: cwdInput.value.trim() || null,
     };
-    if (!payload.label || !payload.command) {
+    if (!payload.label) {
       return toast(t('fieldsRequired'), { error: true });
     }
     const method = isEdit ? 'PATCH' : 'PUT';

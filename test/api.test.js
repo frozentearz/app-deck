@@ -161,7 +161,7 @@ test('PUT button is idempotent upsert', async (t) => {
   assert.equal(app.buttons[0].shell, true);
 });
 
-test('PUT button rejects bad type / missing command', async (t) => {
+test('PUT button rejects bad type, allows empty command', async (t) => {
   const api = await makeApi(t);
   await api.fetch('/api/apps/blog', {
     method: 'PUT',
@@ -179,7 +179,25 @@ test('PUT button rejects bad type / missing command', async (t) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ label: 'y', type: 'exec', shell: true }),
   });
-  assert.equal(noCommand.status, 400);
+  assert.equal(noCommand.status, 200);
+  assert.equal((await noCommand.json()).command, null);
+});
+
+test('run returns 400 when command or dir missing', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(SAMPLE_APP),
+  });
+  await api.fetch('/api/apps/blog/buttons/start', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: '启动', type: 'exec', shell: true }),
+  });
+  const res = await api.fetch('/api/apps/blog/buttons/start/run', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /请先配置/);
 });
 
 test('PATCH and DELETE button work', async (t) => {
@@ -221,7 +239,7 @@ test('exec run: 202 accepted, logs get output+exitCode persisted', async (t) => 
   await api.fetch('/api/apps/blog', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(SAMPLE_APP),
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
   });
   await api.fetch('/api/apps/blog/buttons/hello', {
     method: 'PUT',
@@ -248,7 +266,7 @@ test('run concurrent returns 409, then works after finish', async (t) => {
   await api.fetch('/api/apps/blog', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(SAMPLE_APP),
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
   });
   await api.fetch('/api/apps/blog/buttons/slow', {
     method: 'PUT',
@@ -274,7 +292,7 @@ test('cancel stops a running exec', async (t) => {
   await api.fetch('/api/apps/blog', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(SAMPLE_APP),
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
   });
   await api.fetch('/api/apps/blog/buttons/long', {
     method: 'PUT',

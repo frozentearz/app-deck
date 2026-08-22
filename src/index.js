@@ -79,12 +79,11 @@ function normalizeButton(input, { appId, id } = {}) {
   }
   if (!input.label || typeof input.label !== 'string') throw new Error('label is required');
   if (!BUTTON_TYPES.includes(input.type)) throw new Error(`type must be one of ${BUTTON_TYPES.join(',')}`);
-  if (!input.command || typeof input.command !== 'string') throw new Error('command is required');
   return {
     id: buttonId,
     label: input.label,
     type: input.type,
-    command: input.command,
+    command: input.command ?? null,
     cwd: input.cwd ?? null,
     shell: input.shell ?? true,
   };
@@ -407,8 +406,14 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (!app) return notFound(res);
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
+    if (!button.command) {
+      return send(res, 400, { error: '请先配置项目路径与项目按钮的脚本' });
+    }
+    const cwd = button.cwd ?? app.dir;
+    if (!cwd) {
+      return send(res, 400, { error: '请先配置项目路径与项目按钮的脚本' });
+    }
     const key = `${appId}/${buttonId}`;
-    const cwd = button.cwd ?? app.dir ?? process.cwd();
     const name = pm2Name(appId, buttonId);
     const runId = `r${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
 
