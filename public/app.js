@@ -5,6 +5,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 const state = {
   apps: [],
+  appStatus: {}, // Map of appId -> boolean | null (port alive status)
   searchQuery: '',
   system: { daemon: false, startup: false, pm2Installed: false },
   expandedLogs: new Set(), // Set of appIds with expanded log trays
@@ -62,11 +63,11 @@ function formatRelativeDir(dir) {
 
 async function loadApps() {
   try {
-    const apps = await api('/api/apps');
-    state.apps = apps;
+    state.apps = await api('/api/apps');
     state.loading = false;
     render();
     updateGlobalStats();
+    probeAllAppsStatus().then(updateGlobalStats);
   } catch (err) {
     state.loading = false;
     toast(t('requestFailed') + err.message, { error: true });
@@ -88,51 +89,70 @@ async function refreshRunsIncremental() {
     const apps = await api('/api/apps');
     state.apps = apps;
     updateCardsTelemetry();
+    await probeAllAppsStatus();
     updateGlobalStats();
   } catch {
     // Silent fail on background poll
   }
 }
 
-/** 探活单个项目端口，更新状态点（无缓存，真实 TCP 探测） */
-async function probeAppStatus(appId) {
-  const dot = document.querySelector(`.probe-dot[data-app-id="${appId}"]`);
-  if (!dot) return;
-  try {
-    const res = await api(`/api/apps/${encodeURIComponent(appId)}/status`);
-    const online = res.online;
-    dot.className = `probe-dot ${online === null ? 'unknown' : online ? 'online' : 'offline'}`;
-    dot.title = online === null ? t('appPortHint') : online ? t('online') : t('offline');
-  } catch {
-    // 静默失败，下次轮询重试
-  }
+/** 探活所有配置了端口的项目（TCP 真实探活） */
+async function probeAllAppsStatus() {
+  const targets = state.apps.filter((a) => a.port);
+  if (targets.length === 0) return;
+  await Promise.allSettled(
+    targets.map(async (app) => {
+      try {
+        const res = await api(`/api/apps/${encodeURIComponent(app.id)}/status`);
+        state.appStatus[app.id] = res.online;
+        updateAppProbeUI(app.id, res.online);
+      } catch {
+        // 静默失败，下次轮询重试
+      }
+    })
+  );
 }
 
-/** 每 5 秒探活所有有 port 的项目 */
-function startProbePolling() {
-  clearInterval(state.probeTimer);
-  state.probeTimer = setInterval(() => {
-    for (const app of state.apps) {
-      if (app.port) probeAppStatus(app.id);
-    }
-  }, 5000);
+function updateAppProbeUI(appId, online) {
+  const chip = document.querySelector(`.status-chip[data-probe-id="${appId}"]`);
+  if (!chip) return;
+  const ping = chip.querySelector('.status-ping');
+  const text = chip.querySelector('.status-state-text');
+  const isOnline = online === true;
+  const isOffline = online === false;
+
+  chip.classList.toggle('is-online', isOnline);
+  chip.classList.toggle('is-offline', isOffline);
+
+  if (ping) {
+    ping.className = `status-ping ${isOnline ? 'online' : isOffline ? 'offline' : 'unknown'}`;
+  }
+  if (text) {
+    text.className = `status-state-text ${isOnline ? 'online' : 'offline'}`;
+    text.textContent = isOnline ? t('online') : t('offline');
+  }
 }
 
 function updateGlobalStats() {
   const totalApps = state.apps.length;
   let totalButtons = 0;
-  let runningCount = 0;
+  let runningRuns = 0;
+  let onlineServices = 0;
 
   for (const app of state.apps) {
     totalButtons += app.buttons.length;
     for (const b of app.buttons) {
-      if (b.state === 'running') runningCount++;
+      if (b.state === 'running') runningRuns++;
+    }
+    if (state.appStatus[app.id] === true) {
+      onlineServices++;
     }
   }
 
   const statsEl = $('#globalStatsText');
   if (statsEl) {
-    statsEl.textContent = `${totalApps} ${t('totalApps')} · ${totalButtons} ${t('totalButtons')} · ${runningCount} ${t('activeRuns')}`;
+    const onlinePart = onlineServices > 0 ? ` · ${onlineServices} ${t('onlineServices')}` : '';
+    statsEl.textContent = `${totalApps} ${t('totalApps')}${onlinePart} · ${runningRuns} ${t('activeRuns')}`;
   }
 }
 
@@ -322,7 +342,6 @@ function render() {
 
   for (const app of filtered) {
     list.appendChild(createAppCard(app));
-    if (app.port) probeAppStatus(app.id);
   }
 }
 
@@ -349,15 +368,6 @@ function createAppCard(app) {
   name.className = 'card-name';
   name.textContent = app.name;
 
-  // 运行状态点：有 port 时显示探活状态（online/offline/未知）
-  if (app.port) {
-    const statusDot = document.createElement('span');
-    statusDot.className = 'probe-dot unknown';
-    statusDot.dataset.appId = app.id;
-    statusDot.title = t('offline');
-    titleRow.appendChild(statusDot);
-  }
-
   const idBadge = document.createElement('span');
   idBadge.className = 'card-id-badge';
   idBadge.textContent = app.id;
@@ -374,31 +384,53 @@ function createAppCard(app) {
     info.appendChild(desc);
   }
 
-  // Meta Chips: URL, Dir (Port is merged with URL to avoid redundancy)
+  // Meta Chips: URL (with live status if port configured), Dir
   const chips = document.createElement('div');
   chips.className = 'card-meta-chips';
 
+  const online = state.appStatus[app.id];
+  const isOnline = online === true;
+  const isOffline = online === false;
+
   if (app.url) {
     const chip = document.createElement('span');
-    chip.className = 'meta-chip';
-    const a = document.createElement('a');
-    a.href = app.url;
-    a.target = '_blank';
-    a.rel = 'noreferrer';
-    a.innerHTML = `
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-      <span>${app.url.replace(/^https?:\/\//, '')}</span>
-    `;
-    chip.appendChild(a);
+    if (app.port) {
+      chip.className = `meta-chip status-chip ${isOnline ? 'is-online' : isOffline ? 'is-offline' : ''}`;
+      chip.dataset.probeId = app.id;
+      chip.innerHTML = `
+        <span class="status-ping ${isOnline ? 'online' : isOffline ? 'offline' : 'unknown'}"></span>
+        <span class="status-state-text ${isOnline ? 'online' : 'offline'}">${isOnline ? t('online') : t('offline')}</span>
+        <a href="${app.url}" target="_blank" rel="noreferrer">
+          <span>${app.url.replace(/^https?:\/\//, '')}</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+      `;
+    } else {
+      chip.className = 'meta-chip';
+      const a = document.createElement('a');
+      a.href = app.url;
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      a.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <span>${app.url.replace(/^https?:\/\//, '')}</span>
+      `;
+      chip.appendChild(a);
+    }
     chips.appendChild(chip);
   }
 
   // Only show separate port badge if no URL is configured or URL doesn't contain this port
   if (app.port && (!app.url || !app.url.includes(String(app.port)))) {
     const portChip = document.createElement('span');
-    portChip.className = 'meta-chip clickable';
+    portChip.className = `meta-chip status-chip clickable ${isOnline ? 'is-online' : isOffline ? 'is-offline' : ''}`;
+    portChip.dataset.probeId = app.id;
     portChip.title = t('copyPort');
-    portChip.innerHTML = `<span>:${app.port}</span>`;
+    portChip.innerHTML = `
+      <span class="status-ping ${isOnline ? 'online' : isOffline ? 'offline' : 'unknown'}"></span>
+      <span class="status-state-text ${isOnline ? 'online' : 'offline'}">${isOnline ? t('online') : t('offline')}</span>
+      <span>:${app.port}</span>
+    `;
     portChip.addEventListener('click', () => copyText(String(app.port), `${t('copied')} :${app.port}`));
     chips.appendChild(portChip);
   }
@@ -1219,4 +1251,3 @@ loadApps();
 loadSystem();
 clearInterval(state.pollTimer);
 state.pollTimer = setInterval(refreshRunsIncremental, 2000);
-startProbePolling();

@@ -637,27 +637,7 @@ input, textarea, select {
   flex-wrap: wrap;
 }
 
-.probe-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-tertiary);
-}
 
-.probe-dot.online {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
-}
-
-.probe-dot.offline {
-  background: var(--fail);
-}
-
-.probe-dot.unknown {
-  background: var(--text-tertiary);
-  opacity: 0.5;
-}
 
 .card-name {
   font-size: 17px;
@@ -738,6 +718,69 @@ input, textarea, select {
 .meta-chip.clickable:hover {
   border-color: var(--accent);
   color: var(--accent-light);
+}
+
+/* Service Live Status Chip */
+.meta-chip.status-chip {
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.meta-chip.status-chip.is-online {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+}
+
+.meta-chip.status-chip.is-online a {
+  color: var(--ok);
+  font-weight: 550;
+}
+
+.meta-chip.status-chip.is-offline {
+  border-color: var(--border);
+}
+
+.meta-chip.status-chip.is-offline a {
+  color: var(--text-secondary);
+}
+
+.status-ping {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.status-ping.online {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+  animation: pulseDot 1.6s infinite ease-in-out;
+}
+
+.status-ping.offline {
+  background: var(--text-dim);
+  opacity: 0.6;
+}
+
+.status-ping.unknown {
+  background: var(--text-muted);
+  opacity: 0.4;
+}
+
+.status-state-text {
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+}
+
+.status-state-text.online {
+  color: var(--ok);
+}
+
+.status-state-text.offline {
+  color: var(--text-muted);
 }
 
 .card-actions {

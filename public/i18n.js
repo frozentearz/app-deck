@@ -89,7 +89,8 @@ const I18N = {
     openUrl: '打开链接',
     totalApps: '个项目',
     totalButtons: '个按钮',
-    activeRuns: '个运行中',
+    onlineServices: '服务在线',
+    activeRuns: '任务运行中',
   },
   en: {
     daemon: 'Daemon',
@@ -181,6 +182,7 @@ const I18N = {
     openUrl: 'Open URL',
     totalApps: 'projects',
     totalButtons: 'buttons',
+    onlineServices: 'online',
     activeRuns: 'running',
   },
 };
