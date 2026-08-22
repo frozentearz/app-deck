@@ -698,3 +698,4 @@ document.addEventListener('keydown', (e) => {
 
 loadApps().catch((err) => toast(t('requestFailed') + err.message, { error: true }));
 loadSystem();
+refreshPolling();
