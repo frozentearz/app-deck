@@ -618,6 +618,18 @@ $('#langBtn').addEventListener('click', () => {
 
 $('#langBtn').textContent = t('langName');
 
+/* ---------- copy AIUsage ---------- */
+
+$('#copyAiUsageBtn').addEventListener('click', async () => {
+  try {
+    const res = await api('/api/aiusage');
+    await navigator.clipboard.writeText(res.content);
+    toast(t('aiUsageCopied'));
+  } catch (err) {
+    toast(t('requestFailed') + err.message, { error: true });
+  }
+});
+
 /* ---------- polling ---------- */
 
 function refreshPolling() {

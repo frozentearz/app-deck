@@ -173,6 +173,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (a2 === 'system' && parts.length === 3) return handleSystem(a3, req, res);
     if (a2 === 'export' && parts.length === 2) return send(res, 200, { apps: store.listApps() });
     if (a2 === 'import' && parts.length === 2) return handleImport(req, res);
+    if (a2 === 'aiusage' && parts.length === 2) return handleAiUsage(res);
     if (a2 !== 'apps') return notFound(res);
     if (a3 === undefined) return handleApps(req, res);
     if (a4 === undefined) return handleApp(req, res, a3);
@@ -192,6 +193,15 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
 
   function handleHealth(res) {
     send(res, 200, { status: 'ok' });
+  }
+
+  async function handleAiUsage(res) {
+    try {
+      const content = await readFile(join(projectRoot, 'docs', 'AIUsage.md'), 'utf8');
+      send(res, 200, { content });
+    } catch {
+      send(res, 404, { error: 'AIUsage.md not found' });
+    }
   }
 
   async function handleSystem(action, req, res) {
