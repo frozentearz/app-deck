@@ -1829,6 +1829,7 @@ async function runButton(app, button) {
         id: liveId,
         buttonId: button.id,
         label: button.label,
+        outputFormat: button.outputFormat || 'text',
         running: true,
         output: '',
         startedAt: Date.now()

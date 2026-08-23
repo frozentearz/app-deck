@@ -639,7 +639,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       const entries = [];
       for (const b of app.buttons) {
         for (const e of store.listHistory(appId, b.id)) {
-          entries.push({ ...e, buttonId: b.id, label: b.label, outputFormat: e.outputFormat || b.outputFormat || 'text' });
+          entries.push({ ...e, buttonId: b.id, label: b.label, outputFormat: b.outputFormat || e.outputFormat || 'text' });
         }
       }
       entries.sort((a, b) => b.startedAt - a.startedAt);
