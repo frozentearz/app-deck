@@ -1322,22 +1322,28 @@ async function renderDockOutput() {
     applyDockFilter();
   }
 
-  if (dockState.autoScroll) {
-    bodyEl.scrollTop = bodyEl.scrollHeight;
+  if (format === 'text') {
+    if (dockState.autoScroll) {
+      bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
+  } else {
+    bodyEl.scrollTop = 0;
   }
 
   // Footer controls
   if (footLeft) {
     footLeft.innerHTML = '';
-    const scrollToggle = document.createElement('button');
-    scrollToggle.className = 'dock-footer-btn';
-    scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
-    scrollToggle.addEventListener('click', () => {
-      dockState.autoScroll = !dockState.autoScroll;
+    if (format === 'text') {
+      const scrollToggle = document.createElement('button');
+      scrollToggle.className = 'dock-footer-btn';
       scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
-      if (dockState.autoScroll) bodyEl.scrollTop = bodyEl.scrollHeight;
-    });
-    footLeft.appendChild(scrollToggle);
+      scrollToggle.addEventListener('click', () => {
+        dockState.autoScroll = !dockState.autoScroll;
+        scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
+        if (dockState.autoScroll) bodyEl.scrollTop = bodyEl.scrollHeight;
+      });
+      footLeft.appendChild(scrollToggle);
+    }
 
     if (item.startedAt) {
       const timeTag = document.createElement('span');
