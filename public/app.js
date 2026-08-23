@@ -551,7 +551,7 @@ function createAppCard(app) {
 
   const moreBtn = document.createElement('button');
   moreBtn.className = 'icon-btn more-trigger-btn';
-  moreBtn.dataset.tooltip = t('more') || '更多操作';
+  moreBtn.dataset.tooltip = t('more');
   moreBtn.dataset.tooltipPos = 'left';
   moreBtn.innerHTML = `
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
