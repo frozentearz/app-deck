@@ -504,9 +504,9 @@ function createAppCard(app) {
   // 1. Pin
   const pinBtn = document.createElement('button');
   pinBtn.className = `icon-btn pin-btn ${app.pinned ? 'active' : ''}`;
-  pinBtn.title = app.pinned ? t('unpin') : t('pin');
+  pinBtn.dataset.tooltip = app.pinned ? t('unpin') : t('pin');
   pinBtn.innerHTML = `
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="${app.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="pin-svg" width="13" height="13" viewBox="0 0 24 24" fill="${app.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="12" y1="17" x2="12" y2="22"></line>
       <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
     </svg>
@@ -518,11 +518,12 @@ function createAppCard(app) {
 
   // 2. Terminal
   const termBtn = document.createElement('button');
-  termBtn.className = 'icon-btn';
-  termBtn.title = t('openTerminal');
+  termBtn.className = 'icon-btn term-btn';
+  const termPath = app.dir ? formatRelativeDir(app.dir) : '';
+  termBtn.dataset.tooltip = termPath ? `${t('openTerminal')}: ${termPath}` : t('openTerminal');
   termBtn.innerHTML = `
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="4 17 10 11 4 5"></polyline>
+      <polyline class="term-prompt" points="4 17 10 11 4 5"></polyline>
       <line x1="12" y1="19" x2="20" y2="19"></line>
     </svg>
   `;
@@ -534,7 +535,7 @@ function createAppCard(app) {
   // 3. Add Button
   const addBtn = document.createElement('button');
   addBtn.className = 'compact-add-btn';
-  addBtn.title = t('addButton');
+  addBtn.dataset.tooltip = t('addButton');
   addBtn.innerHTML = `
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     <span>${t('addButton')}</span>
@@ -550,7 +551,8 @@ function createAppCard(app) {
 
   const moreBtn = document.createElement('button');
   moreBtn.className = 'icon-btn more-trigger-btn';
-  moreBtn.title = t('more') || '更多操作';
+  moreBtn.dataset.tooltip = t('more') || '更多操作';
+  moreBtn.dataset.tooltipPos = 'left';
   moreBtn.innerHTML = `
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
   `;

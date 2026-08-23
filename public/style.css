@@ -575,6 +575,96 @@ input, textarea, select {
   background: var(--accent-glow);
 }
 
+/* Fast Instant Tooltip System (120ms responsive) */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: rgba(14, 17, 24, 0.96);
+  backdrop-filter: blur(8px);
+  color: #f1f5f9;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border-hover);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease 0.12s, transform 0.12s ease 0.12s;
+  z-index: 1000;
+}
+
+[data-tooltip]::after {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: rgba(14, 17, 24, 0.96);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease 0.12s;
+  z-index: 1000;
+}
+
+[data-tooltip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+[data-tooltip-pos="left"]::before {
+  left: auto;
+  right: 0;
+  transform: translateY(4px);
+}
+[data-tooltip-pos="left"]:hover::before {
+  transform: translateY(0);
+}
+[data-tooltip-pos="left"]::after {
+  left: auto;
+  right: 8px;
+  transform: none;
+}
+
+/* Terminal & Pin Micro-interactions */
+.icon-btn.term-btn .term-prompt {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.icon-btn.term-btn:hover .term-prompt {
+  transform: translateX(2px);
+}
+
+.icon-btn.pin-btn .pin-svg {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.icon-btn.pin-btn:hover .pin-svg {
+  transform: translateY(-1px) rotate(-6deg);
+}
+.icon-btn.pin-btn:not(.active):hover {
+  border-color: var(--accent);
+  color: var(--accent-light);
+  background: var(--accent-soft);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
 .ai-btn {
   color: var(--accent-light);
   border-color: var(--accent-border);
