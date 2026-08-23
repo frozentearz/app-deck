@@ -497,49 +497,104 @@ function createAppCard(app) {
   info.appendChild(chips);
 
   // Actions on right: + Button, Pin, Edit, Delete
+  // Actions on right: Pin, Terminal, + Button, More Menu (⋯)
   const actions = document.createElement('div');
   actions.className = 'card-actions';
 
-  const addBtn = document.createElement('button');
-  addBtn.className = 'ghost-btn';
-  addBtn.innerHTML = `<span>+ ${t('addButton')}</span>`;
-  addBtn.addEventListener('click', () => openButtonForm(app, null));
-
-  const termBtn = document.createElement('button');
-  termBtn.className = 'icon-btn';
-  termBtn.title = t('openTerminal');
-  termBtn.innerHTML = `
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="4 17 10 11 4 5"></polyline>
-      <line x1="12" y1="19" x2="20" y2="19"></line>
-    </svg>
-    <span>${t('openTerminal')}</span>
-  `;
-  termBtn.addEventListener('click', () => openAppTerminal(app));
-
+  // 1. Pin
   const pinBtn = document.createElement('button');
   pinBtn.className = `icon-btn pin-btn ${app.pinned ? 'active' : ''}`;
   pinBtn.title = app.pinned ? t('unpin') : t('pin');
   pinBtn.innerHTML = `
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="${app.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="${app.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="12" y1="17" x2="12" y2="22"></line>
       <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
     </svg>
-    <span>${app.pinned ? t('unpin') : t('pin')}</span>
   `;
-  pinBtn.addEventListener('click', () => togglePinApp(app));
+  pinBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePinApp(app);
+  });
 
-  const editBtn = document.createElement('button');
-  editBtn.className = 'icon-btn';
-  editBtn.textContent = t('edit');
-  editBtn.addEventListener('click', () => openAppForm(app));
+  // 2. Terminal
+  const termBtn = document.createElement('button');
+  termBtn.className = 'icon-btn';
+  termBtn.title = t('openTerminal');
+  termBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"></polyline>
+      <line x1="12" y1="19" x2="20" y2="19"></line>
+    </svg>
+  `;
+  termBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAppTerminal(app);
+  });
 
-  const delBtn = document.createElement('button');
-  delBtn.className = 'icon-btn';
-  delBtn.textContent = t('delete');
-  delBtn.addEventListener('click', () => deleteApp(app));
+  // 3. Add Button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'compact-add-btn';
+  addBtn.title = t('addButton');
+  addBtn.innerHTML = `
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span>${t('addButton')}</span>
+  `;
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openButtonForm(app, null);
+  });
 
-  actions.append(addBtn, termBtn, pinBtn, editBtn, delBtn);
+  // 4. More Menu (⋯)
+  const moreWrap = document.createElement('div');
+  moreWrap.className = 'card-more-wrap';
+
+  const moreBtn = document.createElement('button');
+  moreBtn.className = 'icon-btn more-trigger-btn';
+  moreBtn.title = t('more') || '更多操作';
+  moreBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+  `;
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'card-dropdown-menu hidden';
+
+  const editItem = document.createElement('button');
+  editItem.className = 'dropdown-item';
+  editItem.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    <span>${t('edit')}</span>
+  `;
+  editItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.add('hidden');
+    openAppForm(app);
+  });
+
+  const delItem = document.createElement('button');
+  delItem.className = 'dropdown-item danger';
+  delItem.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+    <span>${t('delete')}</span>
+  `;
+  delItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.add('hidden');
+    deleteApp(app);
+  });
+
+  dropdown.append(editItem, delItem);
+
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.card-dropdown-menu').forEach(m => {
+      if (m !== dropdown) m.classList.add('hidden');
+    });
+    dropdown.classList.toggle('hidden');
+  });
+
+  moreWrap.append(moreBtn, dropdown);
+
+  actions.append(pinBtn, termBtn, addBtn, moreWrap);
   head.append(info, actions);
   card.appendChild(head);
 
@@ -2059,6 +2114,12 @@ function initTheme() {
   });
 }
 
+window.addEventListener('click', (e) => {
+  if (!e.target.closest('.card-more-wrap')) {
+    document.querySelectorAll('.card-dropdown-menu').forEach(m => m.classList.add('hidden'));
+  }
+});
+
 /* ==========================================================================
    Bootstrap Initialization
    ========================================================================== */
@@ -2070,3 +2131,4 @@ loadApps();
 loadSystem();
 clearInterval(state.pollTimer);
 state.pollTimer = setInterval(refreshRunsIncremental, 2000);
+
