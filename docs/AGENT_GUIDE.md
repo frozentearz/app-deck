@@ -43,10 +43,10 @@ AI 接入 App-Deck 的标准执行流程（**强制遵循计划先行与人机�
 
        | 按钮名称 | 按钮标识 | 执行类型 | 输出格式 (text/json/markdown) | 执行命令 | 用途说明 |
        |---|---|---|---|---|---|
-       | 启动服务 | `start` | 常驻守护 (pm2) | text | `npm run dev` | 拉起开发服务，支持崩溃自愈 |
-       | 运行测试 | `test` | 单次执行 (exec) | text | `npm test` | 执行全套自动化测试 |
-       | 接口探活 | `health` | 单次执行 (exec) | json | `curl -s http://localhost:3000/api/health` | 自动以可折叠 JSON 树展示 |
-       | 架构拓扑 | `arch` | 单次执行 (exec) | markdown | `cat docs/architecture.md` | 自动渲染 Markdown 与 Mermaid 图 |
+       | 启动服务 | `start` | 常驻守护 | text | `npm run dev` | 拉起开发服务，支持崩溃自愈 |
+       | 运行测试 | `test` | 单次执行 | text | `npm test` | 执行全套自动化测试 |
+       | 接口探活 | `health` | 单次执行 | json | `curl -s http://localhost:3000/api/health` | 自动以可折叠 JSON 树展示 |
+       | 架构拓扑 | `arch` | 单次执行 | markdown | `cat docs/architecture.md` | 自动渲染 Markdown 与 Mermaid 图 |
 
 3. **用户同意后调用 API 注册**：在用户明确确认后，AI 再发起 `PUT /api/apps/:appId`（或 `PUT .../buttons/:buttonId`）幂等写入配置；
 4. **验证登记结果**：调用 `GET /api/apps/:appId` 确认配置生效；
