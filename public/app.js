@@ -1502,7 +1502,7 @@ function openAppForm(app = null) {
   const descInput = textArea(app?.description);
   body.appendChild(formField('appDesc', descInput));
 
-  const dirInput = textInput(app?.dir, '/Users/frazier/Project/blog');
+  const dirInput = textInput(app?.dir, t('appDirPlaceholder'));
   body.appendChild(formField('appDir', dirInput, 'appDirHint'));
 
   const urlInput = textInput(app?.url, 'http://localhost:3000');

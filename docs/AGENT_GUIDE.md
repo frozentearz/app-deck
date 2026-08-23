@@ -63,7 +63,7 @@ AI 接入 App-Deck 的标准流程：
   "id": "blog",
   "name": "博客系统",
   "description": "个人博客 web 应用",
-  "dir": "/Users/frazier/Project/blog",
+  "dir": "/path/to/blog",
   "url": "http://localhost:3000",
   "port": 3000,
   "pinned": false,
@@ -90,7 +90,7 @@ AI 接入 App-Deck 的标准流程：
   "label": "启动",
   "type": "managed",
   "command": "npm run dev",
-  "cwd": "/Users/frazier/Project/blog",
+  "cwd": "/path/to/blog",
   "shell": true,
   "outputFormat": "text"
 }
@@ -225,7 +225,7 @@ curl -X PUT http://localhost:6969/api/apps/tomcat \
   -d '{
     "name": "tomcat",
     "description": "Tomcat 服务器",
-    "dir": "/Users/frazier/Project/apache-tomcat-9.0.100",
+    "dir": "/path/to/apache-tomcat-9.0.100",
     "url": "http://localhost:8080",
     "port": 8080,
     "buttons": [
