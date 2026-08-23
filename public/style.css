@@ -644,6 +644,26 @@ input, textarea, select {
   transform: none;
 }
 
+/* Card header action tooltips display downward to avoid top overflow clipping */
+.card-actions [data-tooltip]::before,
+[data-tooltip-pos="bottom"]::before {
+  bottom: auto;
+  top: calc(100% + 6px);
+  transform: translateX(-50%) translateY(-4px);
+}
+.card-actions [data-tooltip]:hover::before,
+[data-tooltip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0);
+}
+
+.card-actions [data-tooltip]::after,
+[data-tooltip-pos="bottom"]::after {
+  bottom: auto;
+  top: calc(100% + 2px);
+  border-top-color: transparent;
+  border-bottom-color: rgba(14, 17, 24, 0.96);
+}
+
 /* Terminal & Pin Micro-interactions */
 .icon-btn.term-btn .term-prompt {
   transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
