@@ -1251,11 +1251,11 @@ function renderDockHistoryList() {
     delBtn.style.padding = '2px';
     delBtn.style.width = '18px';
     delBtn.style.height = '18px';
-    delBtn.title = t('delete');
+    delBtn.dataset.tooltip = t('delete');
+    delBtn.dataset.tooltipPos = 'left';
     delBtn.innerHTML = `✕`;
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(t('confirmDeleteLog'))) return;
       try {
         await api(`/api/apps/${encodeURIComponent(dockState.appId)}/logs/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
         toast(t('logDeleted'));
