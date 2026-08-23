@@ -166,15 +166,9 @@ function updateAppProbeUI(appId, online) {
 
 function updateGlobalStats() {
   const totalApps = state.apps.length;
-  let totalButtons = 0;
-  let runningRuns = 0;
   let onlineServices = 0;
 
   for (const app of state.apps) {
-    totalButtons += app.buttons.length;
-    for (const b of app.buttons) {
-      if (b.state === 'running') runningRuns++;
-    }
     if (state.appStatus[app.id] === true) {
       onlineServices++;
     }
@@ -183,7 +177,7 @@ function updateGlobalStats() {
   const statsEl = $('#globalStatsText');
   if (statsEl) {
     const onlinePart = onlineServices > 0 ? ` · ${onlineServices} ${t('onlineServices')}` : '';
-    statsEl.textContent = `${totalApps} ${t('totalApps')}${onlinePart} · ${runningRuns} ${t('activeRuns')}`;
+    statsEl.textContent = `${totalApps} ${t('totalApps')}${onlinePart}`;
   }
 }
 
