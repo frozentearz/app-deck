@@ -193,6 +193,7 @@ AI 接入 App-Deck 的标准流程：
   "exitCode": 0,
   "success": true,
   "killed": false,
+  "outputFormat": "text",
   "summary": "输出摘要（末尾 200 字）",
   "output": "完整输出（截断 64KB）"
 }
@@ -274,6 +275,29 @@ curl -X POST http://localhost:6969/api/apps/tomcat/buttons/start/run
 ```bash
 curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 ```
+
+### 6.5 跨 Agent 运维接管标准 4 步流 (Agent SOP)
+
+当任何新的 AI Agent 介入项目时，遵循以下 4 步即可无缝接管运维：
+
+1. **探测发现 (Discovery)**：读取所有已登记项目与按钮
+   ```bash
+   curl http://localhost:6969/api/apps
+   ```
+2. **代为执行 (Execute)**：触发指定项目的某个运维动作
+   ```bash
+   curl -X POST http://localhost:6969/api/apps/tomcat/buttons/start/run
+   ```
+3. **检查产物 (Inspect)**：获取最新执行状态与多模态日志
+   ```bash
+   curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
+   ```
+4. **集中增补 (Upsert)**：发现缺少命令时，通过 API 自动增补新按钮（集中管理，不污染本地目录）
+   ```bash
+   curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/clean-cache \
+     -H 'Content-Type: application/json' \
+     -d '{"label": "清理缓存", "type": "exec", "outputFormat": "text", "command": "rm -rf work/* temp/*"}'
+   ```
 
 ## 7. 幂等与并发
 
