@@ -115,16 +115,10 @@ async function loadSystem() {
   }
 }
 
-async function refreshRunsIncremental() {
-  try {
-    const apps = await api('/api/apps');
-    state.apps = apps;
-    updateCardsTelemetry();
-    await probeAllAppsStatus();
-    updateGlobalStats();
-  } catch {
-    // Silent fail on background poll
-  }
+async function refreshAppStatusBackground() {
+  if (document.hidden) return;
+  await probeAllAppsStatus();
+  updateGlobalStats();
 }
 
 /** 探活所有配置了端口的项目（TCP 真实探活） */
@@ -237,7 +231,7 @@ function updateCardsTelemetry() {
       tile.classList.toggle('is-running', isRunning);
       const dot = tile.querySelector('.tile-status-dot');
       if (dot) {
-        dot.className = `tile-status-dot ${isRunning ? 'running' : (button.type === 'managed' ? 'idle' : 'idle')}`;
+        dot.className = `tile-status-dot ${isRunning ? 'running' : 'idle'}`;
       }
 
       const triggerBtn = tile.querySelector('.btn-trigger');
@@ -251,63 +245,6 @@ function updateCardsTelemetry() {
         }
       }
     });
-
-    // Update activity strip
-    updateCardActivityStrip(app.id, card);
-  }
-}
-
-async function updateCardActivityStrip(appId, card) {
-  const strip = card.querySelector('.card-activity-strip');
-  if (!strip) return;
-  try {
-    const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);
-    const entries = res.entries || [];
-    const latest = entries[0];
-    const summaryText = strip.querySelector('.activity-text');
-    const tag = strip.querySelector('.activity-tag');
-    const time = strip.querySelector('.activity-time');
-
-    if (!latest) {
-      if (summaryText) summaryText.textContent = t('noHistory');
-      if (tag) tag.className = 'activity-tag hidden';
-      if (time) time.textContent = '';
-      return;
-    }
-
-    if (tag) {
-      tag.classList.remove('hidden');
-      if (latest.killed) {
-        tag.className = 'activity-tag fail';
-        tag.textContent = t('killed');
-      } else if (latest.success) {
-        tag.className = 'activity-tag ok';
-        tag.textContent = `✓ 0`;
-      } else {
-        tag.className = 'activity-tag fail';
-        tag.textContent = `✗ ${latest.exitCode ?? 1}`;
-      }
-    }
-
-    if (time) {
-      time.textContent = new Date(latest.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    }
-
-    if (summaryText) {
-      summaryText.textContent = `${latest.label || ''}: ${latest.summary || 'done'}`;
-    }
-
-    // If dock is active for this app and not streaming live, refresh dock history
-    if (dockState.appId === appId && !dockState.eventSource) {
-      dockState.history = entries;
-      if (!dockState.history.some(h => h.id === dockState.selectedId)) {
-        dockState.selectedId = dockState.history[0]?.id || null;
-      }
-      renderDockHistoryList();
-      renderDockOutput();
-    }
-  } catch {
-    // Ignore error
   }
 }
 
@@ -1907,7 +1844,7 @@ async function cancelRun(app, button) {
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/cancel`, { method: 'POST' });
     toast(t('cancelOk'));
-    refreshRunsIncremental();
+    loadApps();
   } catch (err) {
     toast(t('requestFailed') + err.message, { error: true });
   }
@@ -2150,5 +2087,11 @@ initDock();
 loadApps();
 loadSystem();
 clearInterval(state.pollTimer);
-state.pollTimer = setInterval(refreshRunsIncremental, 2000);
+state.pollTimer = setInterval(refreshAppStatusBackground, 8000);
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    refreshAppStatusBackground();
+  }
+});
 
