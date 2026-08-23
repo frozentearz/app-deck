@@ -180,11 +180,12 @@
 
   <!-- 底部工作区 Dock (Master-Detail 左右双栏输出与执行记录) -->
   <div id="dockPanel" class="dock-panel collapsed" aria-hidden="true">
+    <div class="dock-resize-handle" id="dockResizeHandle" title="拖拽调整高度"></div>
     <div class="dock-header">
       <div class="dock-tabs">
-        <button class="dock-tab active" id="dockTabText" data-i18n="terminalView">📄 文本</button>
-        <button class="dock-tab" id="dockTabJson" data-i18n="jsonView">{} JSON 树</button>
-        <button class="dock-tab" id="dockTabMd" data-i18n="mdView">📋 Markdown</button>
+        <button class="dock-tab active" id="dockTabText"><span class="tab-icon">📄</span> <span data-i18n="terminalView">文本</span></button>
+        <button class="dock-tab" id="dockTabJson"><span class="tab-icon json-icon">{ }</span> <span data-i18n="jsonView">JSON 树</span></button>
+        <button class="dock-tab" id="dockTabMd"><span class="tab-icon">📋</span> <span data-i18n="mdView">Markdown</span></button>
         <span class="dock-session-title" id="dockSessionTitle"></span>
       </div>
 

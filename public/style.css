@@ -1004,6 +1004,7 @@ input, textarea, select {
   border: 1px solid var(--border);
   color: var(--text);
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
 .btn-trigger:hover {
@@ -1016,15 +1017,54 @@ input, textarea, select {
   transform: scale(0.96);
 }
 
-.btn-trigger.stop {
-  background: var(--fail-soft);
-  border-color: var(--fail-border);
-  color: var(--fail);
+.btn-trigger.is-running {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-soft);
+  cursor: pointer;
+  user-select: none;
+  min-width: 76px;
 }
 
-.btn-trigger.stop:hover {
-  background: var(--fail);
-  color: #fff;
+.btn-trigger.is-running .live-progress-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(14, 165, 233, 0.35));
+  animation: progressShift 1.2s infinite linear;
+  z-index: 0;
+}
+
+.btn-trigger.is-running .btn-label-wrap {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-trigger.is-running .hover-stop {
+  display: none;
+}
+
+.btn-trigger.is-running:hover {
+  border-color: var(--fail-border) !important;
+  color: var(--fail) !important;
+  background: var(--fail-soft) !important;
+}
+
+.btn-trigger.is-running:hover .default-label {
+  display: none !important;
+}
+
+.btn-trigger.is-running:hover .hover-stop {
+  display: inline-flex !important;
+}
+
+@keyframes progressShift {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .btn-tile-edit {
@@ -1980,15 +2020,21 @@ input, textarea, select {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 340px;
+  height: var(--dock-height, 340px);
+  max-height: 100vh;
   background: var(--panel);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.4), var(--card-highlight);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.5), var(--card-highlight);
   z-index: 50;
   display: flex;
   flex-direction: column;
   transform: translateY(0);
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), height 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), height 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, height;
+}
+
+.dock-panel.no-transition {
+  transition: none !important;
 }
 
 .dock-panel.collapsed {
@@ -2000,6 +2046,24 @@ input, textarea, select {
   height: 100vh;
   top: 0;
   z-index: 70;
+  border-top-color: transparent;
+}
+
+.dock-resize-handle {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 99;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.dock-resize-handle:hover,
+.dock-resize-handle.is-resizing {
+  background: var(--accent);
 }
 
 .dock-header {
@@ -2024,12 +2088,32 @@ input, textarea, select {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 550;
   padding: 4px 10px;
   border-radius: var(--r-btn);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1;
   transition: all 0.15s ease;
+}
+
+.dock-tab .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.dock-tab .tab-icon.json-icon {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: -0.5px;
 }
 
 .dock-tab:hover {
@@ -2122,6 +2206,7 @@ input, textarea, select {
   flex: 1;
   overflow: hidden;
   height: calc(100% - 40px);
+  min-height: 0;
 }
 
 .dock-left-history {
@@ -2153,6 +2238,26 @@ input, textarea, select {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.dock-left-list::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.dock-left-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dock-left-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.dock-left-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .history-item-row {
@@ -2175,8 +2280,8 @@ input, textarea, select {
 }
 
 .history-item-row.active {
-  background: var(--panel-elevated);
-  border-color: var(--accent-border);
+  background: var(--panel-elevated) !important;
+  border-color: var(--accent-border) !important;
   box-shadow: var(--shadow-sm);
 }
 
@@ -2227,6 +2332,26 @@ input, textarea, select {
   color: #d1d5db;
   white-space: pre-wrap;
   word-break: break-all;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.dock-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dock-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dock-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.dock-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .dock-footer-bar {

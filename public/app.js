@@ -306,7 +306,11 @@ async function updateCardActivityStrip(appId, card) {
     // If dock is active for this app and not streaming live, refresh dock history
     if (dockState.appId === appId && !dockState.eventSource) {
       dockState.history = entries;
+      if (!dockState.history.some(h => h.id === dockState.selectedId)) {
+        dockState.selectedId = dockState.history[0]?.id || null;
+      }
       renderDockHistoryList();
+      renderDockOutput();
     }
   } catch {
     // Ignore error
@@ -623,13 +627,36 @@ function createActionTile(app, button) {
   controls.className = 'tile-controls';
 
   const trigger = document.createElement('button');
-  trigger.className = `btn-trigger ${isRunning ? 'stop' : ''}`;
+  trigger.className = `btn-trigger ${isRunning ? 'is-running' : ''}`;
   if (isRunning) {
-    trigger.innerHTML = `<span>■</span> <span>${t('stop')}</span>`;
+    const startTs = button.startedAt || Date.now();
+    trigger.title = t('cancelRun');
+    trigger.innerHTML = `
+      <span class="live-progress-fill"></span>
+      <span class="btn-label-wrap default-label"><span>⏳</span> <span class="elapsed-timer">0.0s</span></span>
+      <span class="btn-label-wrap hover-stop"><span>⏹</span> <span>${t('stop')}</span></span>
+    `;
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       cancelRun(app, button);
     });
+
+    const timerEl = trigger.querySelector('.elapsed-timer');
+    if (timerEl) {
+      const updateTimer = () => {
+        if (!trigger.classList.contains('is-running')) return;
+        const elapsed = ((Date.now() - startTs) / 1000).toFixed(1);
+        timerEl.textContent = `${elapsed}s`;
+      };
+      updateTimer();
+      const intervalId = setInterval(() => {
+        if (!document.body.contains(trigger) || !trigger.classList.contains('is-running')) {
+          clearInterval(intervalId);
+          return;
+        }
+        updateTimer();
+      }, 100);
+    }
   } else {
     trigger.innerHTML = `<span>▶</span> <span>${t('run')}</span>`;
     trigger.addEventListener('click', (e) => {
@@ -804,8 +831,25 @@ function highlightLog(text) {
 }
 
 function formatJsonTree(text) {
+  if (!text) return null;
   try {
-    const obj = typeof text === 'object' ? text : JSON.parse(text.trim());
+    let clean = typeof text === 'object' ? text : text;
+    if (typeof clean === 'string') {
+      // Strip ANSI codes
+      clean = clean.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+      // If wrapped in markdown ```json ... ```, unwrap
+      const matchFence = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (matchFence) clean = matchFence[1].trim();
+      // If there is JSON embedded in text, try extracting substring
+      if (!clean.startsWith('{') && !clean.startsWith('[')) {
+        const firstBrace = clean.search(/[\{\[]/);
+        const lastBrace = Math.max(clean.lastIndexOf('}'), clean.lastIndexOf(']'));
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          clean = clean.substring(firstBrace, lastBrace + 1);
+        }
+      }
+    }
+    const obj = typeof clean === 'object' ? clean : JSON.parse(clean);
     const jsonStr = JSON.stringify(obj, null, 2);
     const formatted = escapeHtml(jsonStr).replace(
       /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
@@ -908,7 +952,55 @@ const dockState = {
   filterQuery: ''
 };
 
+function initDockResize() {
+  const handle = $('#dockResizeHandle');
+  const dock = $('#dockPanel');
+  if (!handle || !dock) return;
+
+  const savedHeight = localStorage.getItem('appdeck-dock-height');
+  if (savedHeight && Number(savedHeight) >= 180) {
+    document.documentElement.style.setProperty('--dock-height', `${savedHeight}px`);
+  }
+
+  let isDragging = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (dock.classList.contains('expanded')) return;
+    isDragging = true;
+    startY = e.clientY;
+    startHeight = dock.offsetHeight;
+    handle.classList.add('is-resizing');
+    dock.classList.add('no-transition');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const deltaY = startY - e.clientY;
+    const minHeight = 180;
+    const maxHeight = window.innerHeight - 52;
+    const newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
+    document.documentElement.style.setProperty('--dock-height', `${newHeight}px`);
+    localStorage.setItem('appdeck-dock-height', String(newHeight));
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    handle.classList.remove('is-resizing');
+    dock.classList.remove('no-transition');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+}
+
 function initDock() {
+  // Resize Handle
+  initDockResize();
+
   // Tabs
   $('#dockTabText')?.addEventListener('click', () => setDockTab('terminal'));
   $('#dockTabJson')?.addEventListener('click', () => setDockTab('json'));
@@ -1649,8 +1741,10 @@ async function runButton(app, button) {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/run`, { method: 'POST' });
     toast(button.type === 'managed' ? t('started') : t('executed'));
     button.state = 'running';
+    button.startedAt = Date.now();
     updateCardsTelemetry();
     updateGlobalStats();
+    render();
 
     if (button.type === 'exec') {
       dockState.appId = app.id;
@@ -1711,15 +1805,22 @@ async function runButton(app, button) {
         } catch {}
         es.close();
         if (dockState.eventSource === es) dockState.eventSource = null;
+        button.startedAt = null;
+        button.state = 'idle';
         loadApps();
       });
 
       es.onerror = () => {
         es.close();
         if (dockState.eventSource === es) dockState.eventSource = null;
+        button.startedAt = null;
+        button.state = 'idle';
+        loadApps();
       };
     }
   } catch (err) {
+    button.startedAt = null;
+    button.state = 'idle';
     if (err.status === 409) toast(t('busy'), { error: true });
     else toast(t('requestFailed') + err.message, { error: true });
     loadApps();
