@@ -2254,7 +2254,6 @@ input, textarea, select {
 
 .dock-panel.expanded {
   height: 100vh;
-  top: 0;
   z-index: 70;
   border-top-color: transparent;
 }
