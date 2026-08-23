@@ -1323,8 +1323,7 @@ async function renderDockOutput() {
   if (footLeft) {
     footLeft.innerHTML = '';
     const scrollToggle = document.createElement('button');
-    scrollToggle.className = 'ghost-btn';
-    scrollToggle.style.fontSize = '11px';
+    scrollToggle.className = 'dock-footer-btn';
     scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
     scrollToggle.addEventListener('click', () => {
       dockState.autoScroll = !dockState.autoScroll;
@@ -1335,9 +1334,8 @@ async function renderDockOutput() {
 
     if (item.startedAt) {
       const timeTag = document.createElement('span');
-      timeTag.style.color = 'var(--text-muted)';
-      timeTag.style.fontSize = '11px';
-      timeTag.textContent = `🕒 ${formatDateTime(item.startedAt)}`;
+      timeTag.className = 'dock-time-pill';
+      timeTag.innerHTML = `<span>🕒</span> <span>${formatDateTime(item.startedAt)}</span>`;
       footLeft.appendChild(timeTag);
     }
   }
@@ -1346,8 +1344,7 @@ async function renderDockOutput() {
     footRight.innerHTML = '';
     if (item.running) {
       const killBtn = document.createElement('button');
-      killBtn.className = 'ghost-btn danger';
-      killBtn.style.fontSize = '11px';
+      killBtn.className = 'dock-footer-btn danger';
       killBtn.textContent = t('cancelRun');
       killBtn.addEventListener('click', async () => {
         try {
