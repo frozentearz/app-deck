@@ -682,4 +682,43 @@ test('exec run persists outputFormat in logs history', async (t) => {
   assert.equal(entry.outputFormat, 'json');
 });
 
+test('Store.init automatically carries over legacy apps and history without outputFormat', async () => {
+  const { Store } = await import('../src/store.js');
+  const { writeFile, mkdir } = await import('node:fs/promises');
+  const testDir = join(tmpdir(), `appdeck-migration-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  await mkdir(testDir, { recursive: true });
+
+  // Write legacy apps.json (missing outputFormat and pinned)
+  const legacyApps = {
+    apps: [
+      {
+        id: 'legacy-app',
+        name: '老项目',
+        buttons: [
+          { id: 'b1', label: '老按钮', type: 'exec', command: 'echo 1' }
+        ]
+      }
+    ]
+  };
+  await writeFile(join(testDir, 'apps.json'), JSON.stringify(legacyApps));
+
+  // Write legacy history.json (missing outputFormat)
+  const legacyHistory = {
+    'legacy-app/b1': [
+      { id: 'r1', startedAt: 1000, finishedAt: 1001, exitCode: 0, output: 'hello' }
+    ]
+  };
+  await writeFile(join(testDir, 'history.json'), JSON.stringify(legacyHistory));
+
+  const store = new Store({ dataDir: testDir });
+  await store.init();
+
+  const apps = store.listApps();
+  assert.equal(apps[0].buttons[0].outputFormat, 'text');
+
+  const history = store.listHistory('legacy-app', 'b1');
+  assert.equal(history[0].outputFormat, 'text');
+});
+
+
 

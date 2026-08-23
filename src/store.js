@@ -26,15 +26,46 @@ export class Store {
 
   async init() {
     await mkdir(this.dataDir, { recursive: true });
+    let appsModified = false;
     try {
-      this.apps = JSON.parse(await readFile(this.file, 'utf8')).apps;
+      this.apps = JSON.parse(await readFile(this.file, 'utf8')).apps || [];
+      // 数据结转与平滑升级 (Automatic data migration & carryover)
+      for (const app of this.apps) {
+        if (Array.isArray(app.buttons)) {
+          for (const btn of app.buttons) {
+            if (!btn.outputFormat) {
+              btn.outputFormat = 'text';
+              appsModified = true;
+            }
+          }
+        }
+      }
+      if (appsModified) {
+        await this.save();
+      }
     } catch (e) {
       if (e.code !== 'ENOENT') throw e;
       this.apps = [];
       await this.save();
     }
+
+    let historyModified = false;
     try {
-      this.history = JSON.parse(await readFile(this.historyFile, 'utf8'));
+      this.history = JSON.parse(await readFile(this.historyFile, 'utf8')) || {};
+      // 历史日志数据结转
+      for (const key in this.history) {
+        if (Array.isArray(this.history[key])) {
+          for (const entry of this.history[key]) {
+            if (!entry.outputFormat) {
+              entry.outputFormat = 'text';
+              historyModified = true;
+            }
+          }
+        }
+      }
+      if (historyModified) {
+        await this.saveHistory();
+      }
     } catch (e) {
       if (e.code !== 'ENOENT') throw e;
       this.history = {};
