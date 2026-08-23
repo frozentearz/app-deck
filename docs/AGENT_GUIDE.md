@@ -229,10 +229,10 @@ curl -X PUT http://localhost:6969/api/apps/tomcat \
     "url": "http://localhost:8080",
     "port": 8080,
     "buttons": [
-      { "id": "start",   "label": "启动",   "type": "exec", "command": "bin/catalina.sh start" },
-      { "id": "stop",    "label": "停止",   "type": "exec", "command": "bin/catalina.sh stop" },
-      { "id": "restart", "label": "重启",   "type": "exec", "command": "bin/catalina.sh restart" },
-      { "id": "logs",    "label": "查看日志", "type": "exec", "command": "tail -10 logs/catalina.out" }
+      { "id": "start",   "label": "启动",   "type": "exec", "outputFormat": "text", "command": "bin/catalina.sh start" },
+      { "id": "stop",    "label": "停止",   "type": "exec", "outputFormat": "text", "command": "bin/catalina.sh stop" },
+      { "id": "restart", "label": "重启",   "type": "exec", "outputFormat": "text", "command": "bin/catalina.sh restart" },
+      { "id": "logs",    "label": "查看日志", "type": "exec", "outputFormat": "text", "command": "tail -10 logs/catalina.out" }
     ]
   }'
 ```
