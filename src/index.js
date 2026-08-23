@@ -114,7 +114,7 @@ async function teardownButton(pm2, store, runs, appId, button) {
   }
 }
 
-export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0), elevate = true, startupHome = homedir() } = {}) {
+export function createServer({ store, pm2Path, publicDir = join(__dirname, '..', 'public'), port = DEFAULT_PORT, selfExit = () => process.exit(0), elevate = true, startupHome = homedir(), openTerminal = openNativeTerminal } = {}) {
   const pm2 = new Pm2({ pm2Path });
   const runs = {};
   const historyQueues = new Map();
@@ -175,11 +175,14 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (a2 === 'system' && parts.length === 3) return handleSystem(a3, req, res);
     if (a2 === 'export' && parts.length === 2) return send(res, 200, { apps: store.listApps() });
     if (a2 === 'import' && parts.length === 2) return handleImport(req, res);
-    if (a2 === 'aiusage' && parts.length === 2) return handleAiUsage(res);
+    if ((a2 === 'agent-guide' || a2 === 'agent_guide' || a2 === 'aiusage' || a2 === 'ai-usage') && parts.length === 2) return handleAgentGuide(res);
     if (a2 !== 'apps') return notFound(res);
+
     if (a3 === undefined) return handleApps(req, res);
-    if (a4 === 'logs' && parts.length === 4) return handleAppLogs(res, a3);
+    if (a4 === 'logs' && parts.length === 4) return handleAppLogs(req, res, a3);
+    if (a4 === 'logs' && parts.length === 5) return handleAppLogEntry(req, res, a3, parts[4]);
     if (a4 === 'status' && parts.length === 4) return handleAppStatus(res, a3);
+    if (a4 === 'open-terminal' && parts.length === 4) return handleOpenTerminal(req, res, a3);
     if (a4 === undefined) return handleApp(req, res, a3);
     if (a4 !== 'buttons') return notFound(res);
     if (a5 === undefined) {
@@ -191,7 +194,9 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     if (a6 === 'run') return handleRun(req, res, a3, a5);
     if (a6 === 'cancel') return handleCancel(res, a3, a5);
     if (a6 === 'status') return handleStatus(res, a3, a5);
-    if (a6 === 'logs') return handleLogs(res, a3, a5);
+    if (a6 === 'logs' && parts.length === 6) return handleLogs(req, res, a3, a5);
+    if (a6 === 'logs' && parts.length === 7) return handleButtonLogEntry(req, res, a3, a5, parts[6]);
+    if (a6 === 'stream') return handleStream(req, res, a3, a5);
     return notFound(res);
   }
 
@@ -199,12 +204,17 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     send(res, 200, { status: 'ok' });
   }
 
-  async function handleAiUsage(res) {
+  async function handleAgentGuide(res) {
     try {
-      const content = await readFile(join(projectRoot, 'docs', 'AIUsage.md'), 'utf8');
+      let content;
+      try {
+        content = await readFile(join(projectRoot, 'docs', 'AGENT_GUIDE.md'), 'utf8');
+      } catch {
+        content = await readFile(join(projectRoot, 'docs', 'AIUsage.md'), 'utf8');
+      }
       send(res, 200, { content });
     } catch {
-      send(res, 404, { error: 'AIUsage.md not found' });
+      send(res, 404, { error: 'AGENT_GUIDE.md not found' });
     }
   }
 
@@ -540,25 +550,116 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     }
   }
 
-  function handleLogs(res, appId, buttonId) {
+  async function handleLogs(req, res, appId, buttonId) {
     const app = store.getApp(appId);
     if (!app) return notFound(res);
     const button = store.getButton(appId, buttonId);
     if (!button) return notFound(res);
-    send(res, 200, store.listHistory(appId, buttonId));
+    if (req.method === 'GET') {
+      send(res, 200, store.listHistory(appId, buttonId));
+    } else if (req.method === 'DELETE') {
+      store.deleteHistory(appId, buttonId);
+      await store.saveHistory();
+      send(res, 200, { ok: true });
+    } else {
+      notFound(res);
+    }
   }
 
-  function handleAppLogs(res, appId) {
+  async function handleButtonLogEntry(req, res, appId, buttonId, runId) {
     const app = store.getApp(appId);
     if (!app) return notFound(res);
-    const entries = [];
-    for (const b of app.buttons) {
-      for (const e of store.listHistory(appId, b.id)) {
-        entries.push({ ...e, label: b.label });
-      }
+    const button = store.getButton(appId, buttonId);
+    if (!button) return notFound(res);
+    if (req.method === 'DELETE') {
+      const ok = store.deleteHistoryEntry(appId, buttonId, runId);
+      await store.saveHistory();
+      send(res, 200, { ok });
+    } else {
+      notFound(res);
     }
-    entries.sort((a, b) => b.startedAt - a.startedAt);
-    send(res, 200, { entries });
+  }
+
+  async function handleStream(req, res, appId, buttonId) {
+    if (req.method !== 'GET') return send(res, 405, { error: 'Method not allowed' });
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    const button = store.getButton(appId, buttonId);
+    if (!button) return notFound(res);
+
+    const key = `${appId}/${buttonId}`;
+    const run = runs[key];
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+    });
+
+    if (run && run.state === 'running' && run.executor) {
+      const executor = run.executor;
+      res.write(`event: init\ndata: ${JSON.stringify({ running: true, output: executor.output, startedAt: run.startedAt, runId: run.runId })}\n\n`);
+
+      const onData = ({ chunk, fullOutput }) => {
+        res.write(`event: data\ndata: ${JSON.stringify({ chunk, fullOutput })}\n\n`);
+      };
+
+      const onFinished = (result) => {
+        res.write(`event: end\ndata: ${JSON.stringify(result)}\n\n`);
+        res.end();
+      };
+
+      executor.on('data', onData);
+      executor.on('finished', onFinished);
+
+      req.on('close', () => {
+        executor.off('data', onData);
+        executor.off('finished', onFinished);
+      });
+    } else {
+      const history = store.listHistory(appId, buttonId);
+      const latest = history[0] || null;
+      res.write(`event: end\ndata: ${JSON.stringify({ running: false, lastResult: latest })}\n\n`);
+      res.end();
+    }
+  }
+
+  async function handleAppLogs(req, res, appId) {
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    if (req.method === 'GET') {
+      const entries = [];
+      for (const b of app.buttons) {
+        for (const e of store.listHistory(appId, b.id)) {
+          entries.push({ ...e, buttonId: b.id, label: b.label });
+        }
+      }
+      entries.sort((a, b) => b.startedAt - a.startedAt);
+      send(res, 200, { entries });
+    } else if (req.method === 'DELETE') {
+      store.deleteAppHistory(appId);
+      await store.saveHistory();
+      send(res, 200, { ok: true });
+    } else {
+      notFound(res);
+    }
+  }
+
+  async function handleAppLogEntry(req, res, appId, runId) {
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    if (req.method === 'DELETE') {
+      let ok = false;
+      for (const b of app.buttons) {
+        if (store.deleteHistoryEntry(appId, b.id, runId)) {
+          ok = true;
+        }
+      }
+      await store.saveHistory();
+      send(res, 200, { ok });
+    } else {
+      notFound(res);
+    }
   }
 
   /** 端口探活：每次调用真实 TCP 连接（无缓存） */
@@ -581,6 +682,19 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
     send(res, 200, { online });
   }
 
+  async function handleOpenTerminal(req, res, appId) {
+    if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed' });
+    const app = store.getApp(appId);
+    if (!app) return notFound(res);
+    if (!app.dir) return send(res, 400, { error: '项目未配置工作目录' });
+    try {
+      openTerminal(app.dir);
+      send(res, 200, { ok: true, dir: app.dir });
+    } catch (err) {
+      send(res, 500, { error: err.message });
+    }
+  }
+
   async function serveStatic(url, res) {
     let pathname = url.pathname;
     if (pathname === '/') pathname = '/index.html';
@@ -601,6 +715,42 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
   }
 
   return server;
+}
+
+export function openNativeTerminal(dir) {
+  if (!dir) return false;
+  if (process.env.NODE_ENV === 'test') return true;
+  const cleanDir = normalize(dir);
+  if (process.platform === 'darwin') {
+    const escaped = cleanDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const script = `tell application "Terminal" to do script "cd \\"${escaped}\\""\ntell application "Terminal" to activate`;
+    const child = spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  }
+  if (process.platform === 'win32') {
+    const child = spawn('cmd.exe', ['/c', 'start', 'wt.exe', '-d', `"${cleanDir}"`], { detached: true, stdio: 'ignore' });
+    child.on('error', () => {
+      spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `cd /d "${cleanDir}"`], { detached: true, stdio: 'ignore' });
+    });
+    child.unref();
+    return true;
+  }
+  // Linux
+  const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'xterm'];
+  for (const term of terminals) {
+    try {
+      const child = spawn(term, term === 'gnome-terminal' ? [`--working-directory=${cleanDir}`] : [], {
+        cwd: cleanDir,
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.on('error', () => {});
+      child.unref();
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 const isMain = process.env.NODE_APP_INSTANCE !== undefined || (process.argv[1] && fileURLToPath(`file://${process.argv[1]}`) === fileURLToPath(import.meta.url));

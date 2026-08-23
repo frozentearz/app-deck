@@ -45,11 +45,42 @@ function toast(msg, { error = false } = {}) {
 async function copyText(text, successMsg) {
   if (!text) return;
   try {
-    await navigator.clipboard.writeText(text);
-    toast(successMsg || t('copied'));
-  } catch {
-    toast(t('requestFailed') + 'clipboard error', { error: true });
-  }
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      toast(successMsg || t('copied'));
+      return;
+    }
+  } catch {}
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (successful) {
+      toast(successMsg || t('copied'));
+      return;
+    }
+  } catch {}
+
+  toast(t('copyFailed'), { error: true });
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  return `${m}-${day} ${h}:${min}:${s}`;
 }
 
 function formatRelativeDir(dir) {
@@ -174,7 +205,7 @@ function updateEngineHubUI() {
   }
 
   if (pm2Diag) {
-    pm2Diag.textContent = pm2Installed ? (daemon ? '在线 (守护托管)' : '已就绪 (独立进程)') : '未安装';
+    pm2Diag.textContent = pm2Installed ? (daemon ? t('engineRunning') : t('engineStandalone')) : t('engineMissing');
     pm2Diag.style.color = pm2Installed ? 'var(--ok)' : 'var(--fail)';
   }
 
@@ -272,10 +303,10 @@ async function updateCardActivityStrip(appId, card) {
       summaryText.textContent = `${latest.label || ''}: ${latest.summary || 'done'}`;
     }
 
-    // If inline tray is open, refresh logs tray
-    if (state.expandedLogs.has(appId)) {
-      const tray = card.querySelector('.card-logs-tray');
-      if (tray) renderLogsTrayEntries(tray, appId, entries);
+    // If dock is active for this app and not streaming live, refresh dock history
+    if (dockState.appId === appId && !dockState.eventSource) {
+      dockState.history = entries;
+      renderDockHistoryList();
     }
   } catch {
     // Ignore error
@@ -470,6 +501,18 @@ function createAppCard(app) {
   addBtn.innerHTML = `<span>+ ${t('addButton')}</span>`;
   addBtn.addEventListener('click', () => openButtonForm(app, null));
 
+  const termBtn = document.createElement('button');
+  termBtn.className = 'icon-btn';
+  termBtn.title = t('openTerminal');
+  termBtn.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"></polyline>
+      <line x1="12" y1="19" x2="20" y2="19"></line>
+    </svg>
+    <span>${t('openTerminal')}</span>
+  `;
+  termBtn.addEventListener('click', () => openAppTerminal(app));
+
   const pinBtn = document.createElement('button');
   pinBtn.className = `icon-btn pin-btn ${app.pinned ? 'active' : ''}`;
   pinBtn.title = app.pinned ? t('unpin') : t('pin');
@@ -492,7 +535,7 @@ function createAppCard(app) {
   delBtn.textContent = t('delete');
   delBtn.addEventListener('click', () => deleteApp(app));
 
-  actions.append(addBtn, pinBtn, editBtn, delBtn);
+  actions.append(addBtn, termBtn, pinBtn, editBtn, delBtn);
   head.append(info, actions);
   card.appendChild(head);
 
@@ -521,12 +564,6 @@ function createAppCard(app) {
   // 3. Activity Strip (Bottom)
   const strip = createCardActivityStrip(app);
   card.appendChild(strip);
-
-  // 4. Inline Collapsible Logs Tray (if expanded)
-  if (state.expandedLogs.has(app.id)) {
-    const tray = createCardLogsTray(app);
-    card.appendChild(tray);
-  }
 
   return card;
 }
@@ -626,6 +663,7 @@ function createCardActivityStrip(app) {
 
   const summary = document.createElement('div');
   summary.className = 'activity-summary';
+  summary.style.cursor = 'pointer';
 
   const tag = document.createElement('span');
   tag.className = 'activity-tag hidden';
@@ -640,18 +678,32 @@ function createCardActivityStrip(app) {
   summary.append(tag, time, text);
   strip.appendChild(summary);
 
-  const logsBtn = document.createElement('button');
-  const isExpanded = state.expandedLogs.has(app.id);
-  logsBtn.className = 'activity-btn';
-  logsBtn.innerHTML = `<span>${t('logs')}</span> <span>${isExpanded ? '▾' : '▸'}</span>`;
-  logsBtn.addEventListener('click', () => toggleLogsTray(app.id));
+  let latestEntry = null;
+  summary.addEventListener('click', () => {
+    showDockForApp(app.id, latestEntry?.id);
+  });
 
-  strip.appendChild(logsBtn);
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.alignItems = 'center';
+  actions.style.gap = '6px';
+
+  const viewOutBtn = document.createElement('button');
+  viewOutBtn.className = 'activity-btn';
+  viewOutBtn.innerHTML = `<span>${t('viewOutput')} ↗</span>`;
+  viewOutBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showDockForApp(app.id, latestEntry?.id);
+  });
+
+  actions.append(viewOutBtn);
+  strip.appendChild(actions);
 
   // Initial fetch for strip text
   api(`/api/apps/${encodeURIComponent(app.id)}/logs`).then((res) => {
     const latest = res.entries?.[0];
     if (!latest) return;
+    latestEntry = latest;
     tag.classList.remove('hidden');
     if (latest.killed) {
       tag.className = 'activity-tag fail';
@@ -663,7 +715,7 @@ function createCardActivityStrip(app) {
       tag.className = 'activity-tag fail';
       tag.textContent = `✗ ${latest.exitCode ?? 1}`;
     }
-    time.textContent = new Date(latest.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    time.textContent = formatDateTime(latest.startedAt);
     text.textContent = `${latest.label || ''}: ${latest.summary || 'done'}`;
   }).catch(() => {});
 
@@ -679,78 +731,521 @@ function toggleLogsTray(appId) {
   render();
 }
 
-function createCardLogsTray(app) {
-  const tray = document.createElement('div');
-  tray.className = 'card-logs-tray';
+/* ==========================================================================
+   Output Formatter & Ansi Parser
+   ========================================================================== */
 
-  api(`/api/apps/${encodeURIComponent(app.id)}/logs`).then((res) => {
-    renderLogsTrayEntries(tray, app.id, res.entries || []);
-  }).catch(() => {
-    tray.textContent = t('noHistory');
-  });
+function parseAnsi(text) {
+  if (!text) return '';
+  const colors = {
+    30: 'ansi-black', 31: 'ansi-red', 32: 'ansi-green', 33: 'ansi-yellow',
+    34: 'ansi-blue', 35: 'ansi-magenta', 36: 'ansi-cyan', 37: 'ansi-white',
+    90: 'ansi-bright-black', 91: 'ansi-bright-red', 92: 'ansi-bright-green',
+    93: 'ansi-bright-yellow', 94: 'ansi-bright-blue', 95: 'ansi-bright-magenta',
+    96: 'ansi-bright-cyan', 97: 'ansi-bright-white',
+  };
+  const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  const parts = text.split(/\x1b\[([0-9;]+)m/);
+  let html = '';
+  let currentClass = '';
+  let isBold = false;
 
-  return tray;
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      const codes = parts[i].split(';');
+      for (const code of codes) {
+        const c = parseInt(code, 10);
+        if (c === 0) {
+          currentClass = '';
+          isBold = false;
+        } else if (c === 1) {
+          isBold = true;
+        } else if (colors[c]) {
+          currentClass = colors[c];
+        }
+      }
+    } else {
+      const escaped = escapeHtml(parts[i]);
+      if (currentClass || isBold) {
+        const classes = [currentClass, isBold ? 'ansi-bold' : ''].filter(Boolean).join(' ');
+        html += `<span class="${classes}">${escaped}</span>`;
+      } else {
+        html += escaped;
+      }
+    }
+  }
+  return html;
 }
 
-function renderLogsTrayEntries(tray, appId, entries) {
-  tray.innerHTML = '';
-  if (!entries || entries.length === 0) {
-    tray.innerHTML = `<div style="color: var(--text-muted); padding: 8px;">${t('noHistory')}</div>`;
+function highlightLog(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  return lines.map((line) => {
+    let lineHtml = parseAnsi(line);
+    if (/\b(ERROR|SEVERE|FATAL|Exception|Error:)\b/i.test(line)) {
+      return `<div class="log-line log-error">${lineHtml || '&nbsp;'}</div>`;
+    }
+    if (/\b(WARN|WARNING)\b/i.test(line)) {
+      return `<div class="log-line log-warn">${lineHtml || '&nbsp;'}</div>`;
+    }
+    if (/\b(INFO)\b/.test(line)) {
+      return `<div class="log-line log-info">${lineHtml || '&nbsp;'}</div>`;
+    }
+    if (/\b(DEBUG|TRACE)\b/.test(line)) {
+      return `<div class="log-line log-debug">${lineHtml || '&nbsp;'}</div>`;
+    }
+    return `<div class="log-line">${lineHtml || '&nbsp;'}</div>`;
+  }).join('');
+}
+
+function formatJsonTree(text) {
+  try {
+    const obj = typeof text === 'object' ? text : JSON.parse(text.trim());
+    const jsonStr = JSON.stringify(obj, null, 2);
+    const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const formatted = escapeHtml(jsonStr).replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      (match) => {
+        let cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+          } else {
+            cls = 'json-string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-boolean';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return `<span class="${cls}">${match}</span>`;
+      }
+    );
+    return `<pre class="json-tree-pre">${formatted}</pre>`;
+  } catch (e) {
+    return null;
+  }
+}
+
+let mermaidInstance = null;
+async function ensureMermaid() {
+  if (mermaidInstance) return mermaidInstance;
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+    mermaidInstance = mod.default || mod;
+    mermaidInstance.initialize({ startOnLoad: false, theme: 'dark' });
+    return mermaidInstance;
+  } catch (e) {
+    console.warn('Failed to load mermaid via ESM:', e);
+    return null;
+  }
+}
+
+async function renderMarkdown(text, container) {
+  const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  const mermaidBlocks = [];
+  let processed = text.replace(/```mermaid([\s\S]*?)```/g, (match, code) => {
+    const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+    mermaidBlocks.push({ id, code: code.trim() });
+    return `<div class="mermaid-svg-container" id="${id}"><div class="hint">Rendering diagram...</div></div>`;
+  });
+
+  // Table markdown parser
+  processed = processed.replace(/\|(.+)\|\n\|[-:| ]+\|\n((?:\|.*\|\n?)*)/g, (match, header, rows) => {
+    const headers = header.split('|').map(h => h.trim()).filter(Boolean);
+    const ths = headers.map(h => `<th>${escapeHtml(h)}</th>`).join('');
+    const trs = rows.trim().split('\n').map(row => {
+      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      return `<tr>${cols.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`;
+    }).join('');
+    return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+  });
+
+  processed = processed
+    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+    .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+    .replace(/```([a-z]*)([\s\S]*?)```/gim, '<pre><code>$2</code></pre>')
+    .replace(/`([^`]+)`/gim, '<code>$1</code>')
+    .replace(/\n\n/gim, '<br/><br/>');
+
+  container.innerHTML = processed;
+
+  if (mermaidBlocks.length > 0) {
+    const mm = await ensureMermaid();
+    if (mm) {
+      for (const b of mermaidBlocks) {
+        const el = container.querySelector(`#${b.id}`);
+        if (el) {
+          try {
+            const cleanId = 'mm_' + Math.random().toString(36).slice(2, 9);
+            const { svg } = await mm.render(cleanId, b.code);
+            el.innerHTML = svg;
+          } catch (err) {
+            el.innerHTML = `<pre class="log-error" style="padding: 10px; margin: 0;">Mermaid render error: ${escapeHtml(err.message)}</pre>`;
+          }
+        }
+      }
+    }
+  }
+}
+
+/* ==========================================================================
+   Master-Detail Workspace Dock Module (Bottom Split Panel)
+   ========================================================================== */
+
+const dockState = {
+  appId: null,
+  history: [],
+  selectedId: null,
+  activeTab: 'terminal', // 'terminal' | 'json' | 'markdown'
+  autoScroll: true,
+  eventSource: null,
+  filterQuery: ''
+};
+
+function initDock() {
+  // Tabs
+  $('#dockTabText')?.addEventListener('click', () => setDockTab('terminal'));
+  $('#dockTabJson')?.addEventListener('click', () => setDockTab('json'));
+  $('#dockTabMd')?.addEventListener('click', () => setDockTab('markdown'));
+
+  // Copy
+  $('#dockCopyBtn')?.addEventListener('click', () => {
+    const entry = dockState.history.find(h => h.id === dockState.selectedId);
+    copyText(entry?.output || $('#dockBody')?.innerText || '', t('outputCopied'));
+  });
+
+  // Fullscreen toggle button
+  $('#btnFullscreen')?.addEventListener('click', toggleDockExpand);
+
+  // Close dock button
+  $('#btnCloseDock')?.addEventListener('click', () => toggleDock(false));
+
+  // Clear all history for current project
+  $('#dockClearHistoryBtn')?.addEventListener('click', clearCurrentAppHistory);
+
+  // Filter / grep
+  $('#dockSearchInput')?.addEventListener('input', (e) => {
+    dockState.filterQuery = e.target.value.trim().toLowerCase();
+    applyDockFilter();
+  });
+
+  // Keyboard shortcuts for F and Esc
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+    const dock = $('#dockPanel');
+    const isOpen = dock && !dock.classList.contains('collapsed');
+
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      if (!isOpen) {
+        const targetAppId = dockState.appId || state.apps[0]?.id;
+        if (targetAppId) showDockForApp(targetAppId);
+      } else {
+        toggleDockExpand();
+      }
+    } else if (e.key === 'Escape') {
+      if (dock && dock.classList.contains('expanded')) {
+        toggleDockExpand();
+      } else if (isOpen) {
+        toggleDock(false);
+      }
+    }
+  });
+}
+
+function setDockTab(tab) {
+  dockState.activeTab = tab;
+  $('#dockTabText')?.classList.toggle('active', tab === 'terminal');
+  $('#dockTabJson')?.classList.toggle('active', tab === 'json');
+  $('#dockTabMd')?.classList.toggle('active', tab === 'markdown');
+  renderDockOutput();
+}
+
+function toggleDock(show) {
+  const dock = $('#dockPanel');
+  if (!dock) return;
+  if (show === undefined) {
+    dock.classList.toggle('collapsed');
+  } else if (show) {
+    dock.classList.remove('collapsed');
+    dock.setAttribute('aria-hidden', 'false');
+  } else {
+    dock.classList.add('collapsed');
+    dock.classList.remove('expanded');
+    dock.setAttribute('aria-hidden', 'true');
+    const btn = $('#btnFullscreen');
+    if (btn) btn.classList.remove('active');
+    const text = $('#fsText');
+    if (text) text.textContent = t('fullscreen');
+    const hint = $('#fsKbdHint');
+    if (hint) hint.textContent = 'F';
+    if (dockState.eventSource) {
+      dockState.eventSource.close();
+      dockState.eventSource = null;
+    }
+  }
+}
+
+function toggleDockExpand() {
+  const dock = $('#dockPanel');
+  if (!dock) return;
+  dock.classList.toggle('expanded');
+  const isExp = dock.classList.contains('expanded');
+  const btn = $('#btnFullscreen');
+  if (btn) btn.classList.toggle('active', isExp);
+  const text = $('#fsText');
+  if (text) text.textContent = isExp ? t('restore') : t('fullscreen');
+  const hint = $('#fsKbdHint');
+  if (hint) hint.textContent = 'F';
+}
+
+async function showDockForApp(appId, selectId = null) {
+  dockState.appId = appId;
+  const app = state.apps.find(a => a.id === appId) || { id: appId, name: appId };
+  
+  const leftTitle = $('#dockLeftTitle');
+  if (leftTitle) {
+    leftTitle.textContent = `${app.name || app.id}`;
+  }
+
+  toggleDock(true);
+
+  try {
+    const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);
+    dockState.history = res.entries || [];
+    if (selectId && dockState.history.some(h => h.id === selectId)) {
+      dockState.selectedId = selectId;
+    } else if (dockState.history.length > 0) {
+      dockState.selectedId = dockState.history[0].id;
+    } else {
+      dockState.selectedId = null;
+    }
+    renderDockHistoryList();
+    renderDockOutput();
+  } catch (err) {
+    dockState.history = [];
+    dockState.selectedId = null;
+    renderDockHistoryList();
+    renderDockOutput();
+  }
+}
+
+function renderDockHistoryList() {
+  const container = $('#dockHistoryList');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const count = dockState.history.length;
+  const app = state.apps.find(a => a.id === dockState.appId) || { id: dockState.appId, name: dockState.appId };
+  const leftTitle = $('#dockLeftTitle');
+  if (leftTitle) {
+    leftTitle.textContent = `${app.name || app.id} (${count})`;
+  }
+
+  if (count === 0) {
+    const empty = document.createElement('div');
+    empty.style.color = 'var(--text-muted)';
+    empty.style.padding = '16px';
+    empty.style.fontSize = '11px';
+    empty.style.textAlign = 'center';
+    empty.textContent = t('noHistory');
+    container.appendChild(empty);
     return;
   }
 
-  for (const e of entries) {
+  dockState.history.forEach((item) => {
     const row = document.createElement('div');
-    row.className = 'tray-row';
+    row.className = `history-item-row ${item.id === dockState.selectedId ? 'active' : ''}`;
+    row.addEventListener('click', () => {
+      dockState.selectedId = item.id;
+      renderDockHistoryList();
+      renderDockOutput();
+    });
 
-    const time = document.createElement('span');
-    time.style.color = 'var(--text-muted)';
-    time.style.flexShrink = '0';
-    time.textContent = new Date(e.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const left = document.createElement('div');
+    left.className = 'history-item-left';
 
-    const lbl = document.createElement('span');
-    lbl.style.fontWeight = '600';
-    lbl.style.flexShrink = '0';
-    lbl.textContent = e.label || '';
-
-    const status = document.createElement('span');
-    status.style.fontWeight = '600';
-    status.style.flexShrink = '0';
-    status.style.color = e.killed ? 'var(--fail)' : (e.success ? 'var(--ok)' : 'var(--fail)');
-    status.textContent = e.killed ? t('killed') : (e.success ? `✓ ${e.exitCode}` : `✗ ${e.exitCode}`);
-
-    const sum = document.createElement('span');
-    sum.style.color = 'var(--text-secondary)';
-    sum.style.overflow = 'hidden';
-    sum.style.textOverflow = 'ellipsis';
-    sum.style.whiteSpace = 'nowrap';
-    sum.style.flex = '1';
-    sum.textContent = e.summary || '';
-
-    const arrow = document.createElement('span');
-    arrow.style.color = 'var(--text-muted)';
-    arrow.style.flexShrink = '0';
-    const isOpen = state.expandedLogRows.has(e.id);
-    arrow.textContent = isOpen ? '▾' : '▸';
-
-    row.append(time, lbl, status, sum, arrow);
-    tray.appendChild(row);
-
-    if (isOpen && e.output) {
-      const out = document.createElement('pre');
-      out.className = 'tray-output-block';
-      out.textContent = e.output;
-      tray.appendChild(out);
+    const badge = document.createElement('span');
+    if (item.running || item.isRunning) {
+      badge.className = 'activity-tag running';
+      badge.textContent = '⏳';
+    } else if (item.killed) {
+      badge.className = 'activity-tag fail';
+      badge.textContent = t('killed');
+    } else if (item.success || item.exitCode === 0) {
+      badge.className = 'activity-tag ok';
+      badge.textContent = `✓ 0`;
+    } else {
+      badge.className = 'activity-tag fail';
+      badge.textContent = `✗ ${item.exitCode ?? 1}`;
     }
 
-    row.addEventListener('click', () => {
-      if (state.expandedLogRows.has(e.id)) {
-        state.expandedLogRows.delete(e.id);
-      } else {
-        state.expandedLogRows.add(e.id);
+    const info = document.createElement('div');
+    info.className = 'history-item-info';
+
+    const title = document.createElement('span');
+    title.className = 'history-item-title';
+    title.textContent = item.label || item.buttonId || t('viewOutput');
+
+    const time = document.createElement('span');
+    time.className = 'history-item-time';
+    time.textContent = item.startedAt ? formatDateTime(item.startedAt) : (item.time || '');
+
+    info.append(title, time);
+    left.append(badge, info);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'icon-btn';
+    delBtn.style.padding = '2px';
+    delBtn.style.width = '18px';
+    delBtn.style.height = '18px';
+    delBtn.title = t('delete');
+    delBtn.innerHTML = `✕`;
+    delBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(t('confirmDeleteLog'))) return;
+      try {
+        await api(`/api/apps/${encodeURIComponent(dockState.appId)}/logs/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+        toast(t('logDeleted'));
+        dockState.history = dockState.history.filter(h => h.id !== item.id);
+        if (dockState.selectedId === item.id) {
+          dockState.selectedId = dockState.history[0]?.id || null;
+        }
+        renderDockHistoryList();
+        renderDockOutput();
+        render();
+      } catch (err) {
+        toast(t('requestFailed') + err.message, { error: true });
       }
-      renderLogsTrayEntries(tray, appId, entries);
     });
+
+    row.append(left, delBtn);
+    container.appendChild(row);
+  });
+}
+
+function renderDockOutput() {
+  const item = dockState.history.find(h => h.id === dockState.selectedId);
+  const titleEl = $('#dockSessionTitle');
+  const bodyEl = $('#dockBody');
+  const footLeft = $('#dockFooterLeft');
+  const footRight = $('#dockFooterRight');
+
+  if (!item) {
+    if (titleEl) titleEl.textContent = `[${dockState.appId || ''} :: ${t('noHistory')}]`;
+    if (bodyEl) bodyEl.innerHTML = `<span style="color:var(--text-muted); padding: 16px; display: block;">${t('noHistory')}</span>`;
+    if (footLeft) footLeft.innerHTML = '';
+    if (footRight) footRight.innerHTML = '';
+    return;
+  }
+
+  if (titleEl) {
+    titleEl.textContent = `[${dockState.appId} :: ${item.label || item.buttonId || ''}]`;
+  }
+
+  const text = item.output || '';
+  if (dockState.activeTab === 'terminal') {
+    bodyEl.className = 'dock-body';
+    bodyEl.innerHTML = highlightLog(text) || `<div style="color: var(--text-muted); padding: 16px;">(No output)</div>`;
+    applyDockFilter();
+  } else if (dockState.activeTab === 'json') {
+    bodyEl.className = 'dock-body';
+    const tree = formatJsonTree(text);
+    if (tree) {
+      bodyEl.innerHTML = tree;
+    } else {
+      bodyEl.innerHTML = `<div class="hint" style="padding: 16px;">(Invalid JSON)</div>${highlightLog(text)}`;
+    }
+  } else if (dockState.activeTab === 'markdown') {
+    bodyEl.className = 'dock-body markdown-view-container';
+    renderMarkdown(text, bodyEl);
+  }
+
+  if (dockState.autoScroll) {
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+  }
+
+  // Footer controls
+  if (footLeft) {
+    footLeft.innerHTML = '';
+    const scrollToggle = document.createElement('button');
+    scrollToggle.className = 'ghost-btn';
+    scrollToggle.style.fontSize = '11px';
+    scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
+    scrollToggle.addEventListener('click', () => {
+      dockState.autoScroll = !dockState.autoScroll;
+      scrollToggle.textContent = dockState.autoScroll ? t('pauseAutoScroll') : t('resumeAutoScroll');
+      if (dockState.autoScroll) bodyEl.scrollTop = bodyEl.scrollHeight;
+    });
+    footLeft.appendChild(scrollToggle);
+
+    if (item.startedAt) {
+      const timeTag = document.createElement('span');
+      timeTag.style.color = 'var(--text-muted)';
+      timeTag.style.fontSize = '11px';
+      timeTag.textContent = `🕒 ${formatDateTime(item.startedAt)}`;
+      footLeft.appendChild(timeTag);
+    }
+  }
+
+  if (footRight) {
+    footRight.innerHTML = '';
+    if (item.running || item.isRunning) {
+      const killBtn = document.createElement('button');
+      killBtn.className = 'ghost-btn danger';
+      killBtn.style.fontSize = '11px';
+      killBtn.textContent = t('cancelRun');
+      killBtn.addEventListener('click', async () => {
+        try {
+          await api(`/api/apps/${encodeURIComponent(dockState.appId)}/buttons/${encodeURIComponent(item.buttonId)}/cancel`, { method: 'POST' });
+          toast(t('runCancelled'));
+          item.running = false;
+          item.isRunning = false;
+          item.killed = true;
+          renderDockHistoryList();
+          renderDockOutput();
+        } catch (err) {
+          toast(t('requestFailed') + err.message, { error: true });
+        }
+      });
+      footRight.appendChild(killBtn);
+    }
+  }
+}
+
+function applyDockFilter() {
+  const query = dockState.filterQuery;
+  const bodyEl = $('#dockBody');
+  if (!bodyEl) return;
+  if (!query) {
+    bodyEl.querySelectorAll('.log-line').forEach(el => el.classList.remove('highlight-match'));
+    return;
+  }
+  bodyEl.querySelectorAll('.log-line').forEach(el => {
+    const match = el.textContent.toLowerCase().includes(query);
+    el.classList.toggle('highlight-match', match);
+  });
+}
+
+async function clearCurrentAppHistory() {
+  if (!dockState.appId) return;
+  if (!confirm(t('confirmClearLogs'))) return;
+  try {
+    await api(`/api/apps/${encodeURIComponent(dockState.appId)}/logs`, { method: 'DELETE' });
+    toast(t('logsCleared'));
+    dockState.history = [];
+    dockState.selectedId = null;
+    renderDockHistoryList();
+    renderDockOutput();
+    render();
+  } catch (err) {
+    toast(t('requestFailed') + err.message, { error: true });
   }
 }
 
@@ -846,10 +1341,10 @@ function openAppForm(app = null) {
   body.style.flexDirection = 'column';
   body.style.gap = '14px';
 
-  const nameInput = textInput(app?.name, '例如: 个人博客或数据中台');
+  const nameInput = textInput(app?.name, t('appNamePlaceholder'));
   body.appendChild(formField('appName', nameInput));
 
-  const idInput = textInput(app?.id, '例如: blog');
+  const idInput = textInput(app?.id, t('appIdPlaceholder'));
   idInput.disabled = isEdit;
   body.appendChild(formField('appId', idInput, 'appIdHint'));
 
@@ -913,44 +1408,144 @@ function openButtonForm(app, button = null) {
   body.style.flexDirection = 'column';
   body.style.gap = '14px';
 
-  const labelInput = textInput(button?.label, '例如: 启动服务');
+  const labelInput = textInput(button?.label, t('btnLabelPlaceholder'));
   body.appendChild(formField('buttonLabel', labelInput));
 
-  const idInput = textInput(button?.id, '例如: start');
+  const idInput = textInput(button?.id, t('btnIdPlaceholder'));
   idInput.disabled = isEdit;
   body.appendChild(formField('buttonId', idInput, 'appIdHint'));
 
   // Type selector (managed / exec)
   const typeSelect = document.createElement('select');
   typeSelect.innerHTML = `
-    <option value="exec" ${button?.type !== 'managed' ? 'selected' : ''}>${t('execBadge')} (一次性运行，捕获输出与退出码)</option>
-    <option value="managed" ${button?.type === 'managed' ? 'selected' : ''}>${t('managedBadge')} (常驻服务，pm2 守护/崩溃自启)</option>
+    <option value="exec" ${button?.type !== 'managed' ? 'selected' : ''}>${t('execBadge')} ${t('execBadgeDesc')}</option>
+    <option value="managed" ${button?.type === 'managed' ? 'selected' : ''}>${t('managedBadge')} ${t('managedBadgeDesc')}</option>
   `;
   body.appendChild(formField('buttonType', typeSelect));
 
-  // Command input + Presets
+  // Command input + Copy button + 4 Script Modes Presets
   const commandInput = textArea(button?.command);
-  const cmdField = formField('buttonCommand', commandInput);
+  commandInput.rows = 3;
+  commandInput.style.fontFamily = 'var(--font-mono, "SF Mono", Menlo, Consolas, monospace)';
+  commandInput.style.fontSize = '12px';
+  commandInput.style.lineHeight = '1.45';
+  commandInput.style.resize = 'vertical';
+  commandInput.style.minHeight = '72px';
+  commandInput.placeholder = t('commandPlaceholder');
 
-  const tplWrap = document.createElement('div');
-  tplWrap.className = 'template-chips';
-  const presets = [
-    { label: 'npm run dev', cmd: 'npm run dev' },
-    { label: 'npm start', cmd: 'npm start' },
-    { label: 'python main.py', cmd: 'python main.py' },
-    { label: 'docker compose up', cmd: 'docker compose up -d' },
-    { label: 'git pull', cmd: 'git pull' },
+  const cmdField = document.createElement('div');
+  cmdField.className = 'field';
+
+  const cmdHeader = document.createElement('div');
+  cmdHeader.style.display = 'flex';
+  cmdHeader.style.justifyContent = 'space-between';
+  cmdHeader.style.alignItems = 'center';
+  cmdHeader.style.marginBottom = '6px';
+
+  const cmdLabel = document.createElement('label');
+  cmdLabel.textContent = t('buttonCommand');
+  cmdLabel.style.margin = '0';
+
+  const copyCmdBtn = document.createElement('button');
+  copyCmdBtn.type = 'button';
+  copyCmdBtn.className = 'ghost-btn';
+  copyCmdBtn.style.padding = '2px 8px';
+  copyCmdBtn.style.fontSize = '11px';
+  copyCmdBtn.style.display = 'inline-flex';
+  copyCmdBtn.style.alignItems = 'center';
+  copyCmdBtn.style.gap = '4px';
+  copyCmdBtn.title = t('copyCommand');
+  copyCmdBtn.innerHTML = `
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span>${t('copyCommand')}</span>
+  `;
+  copyCmdBtn.addEventListener('click', () => {
+    const cmdVal = commandInput.value.trim();
+    if (!cmdVal) return toast(t('noCommandToCopy'), { error: true });
+    copyText(cmdVal, t('commandCopied'));
+  });
+
+  cmdHeader.append(cmdLabel, copyCmdBtn);
+  cmdField.append(cmdHeader, commandInput);
+
+  // 4 Script Modes Templates
+  const tplSection = document.createElement('div');
+  tplSection.className = 'script-modes-wrapper';
+
+  const tplTitle = document.createElement('div');
+  tplTitle.style.fontSize = '12px';
+  tplTitle.style.fontWeight = '600';
+  tplTitle.style.color = 'var(--text-secondary)';
+  tplTitle.style.display = 'flex';
+  tplTitle.style.alignItems = 'center';
+  tplTitle.style.gap = '5px';
+  tplTitle.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+    </svg>
+    <span>${t('scriptModesHint')}</span>
+  `;
+  tplSection.appendChild(tplTitle);
+
+  const scriptModes = [
+    {
+      group: t('modeSingle'),
+      items: [
+        { label: 'npm run dev', cmd: 'npm run dev' },
+        { label: 'python3 server.py', cmd: 'python3 server.py' },
+        { label: 'tail -n 20 logs', cmd: 'tail -n 20 logs/catalina.log' }
+      ]
+    },
+    {
+      group: t('modeChained'),
+      items: [
+        { label: 'git pull && build', cmd: 'git pull && npm run build' },
+        { label: t('tplPsGrep'), cmd: 'ps aux | grep node' }
+      ]
+    },
+    {
+      group: t('modeInlinePy'),
+      items: [
+        { label: t('tplPyCountdown'), cmd: 'python3 -c "import time; print(\'准备备份...\'); time.sleep(1); print(\'完成\')"' },
+        { label: t('tplPyHealth'), cmd: 'python3 -c "import urllib.request; print(urllib.request.urlopen(\'http://localhost:6969/api/health\').read().decode())"' }
+      ]
+    },
+    {
+      group: t('modeInlineBash'),
+      items: [
+        { label: t('tplBashLoop'), cmd: "bash -c 'for i in 1 2 3 4 5; do echo \"进度: $i\"; sleep 1; done'" },
+        { label: t('tplBashSnapshot'), cmd: "bash -c 'echo \"== 负载 ==\"; uptime; echo \"\\n== 磁盘 ==\"; df -h'" }
+      ]
+    }
   ];
-  for (const p of presets) {
-    const chip = document.createElement('span');
-    chip.className = 'tpl-chip';
-    chip.textContent = p.label;
-    chip.addEventListener('click', () => {
-      commandInput.value = p.cmd;
-    });
-    tplWrap.appendChild(chip);
+
+  for (const mode of scriptModes) {
+    const row = document.createElement('div');
+    row.className = 'tpl-group-row';
+
+    const tag = document.createElement('span');
+    tag.className = 'tpl-group-tag';
+    tag.textContent = mode.group + ':';
+    row.appendChild(tag);
+
+    for (const item of mode.items) {
+      const chip = document.createElement('span');
+      chip.className = 'tpl-chip';
+      chip.textContent = item.label;
+      chip.title = item.cmd;
+      chip.addEventListener('click', () => {
+        commandInput.value = item.cmd;
+        commandInput.focus();
+      });
+      row.appendChild(chip);
+    }
+    tplSection.appendChild(row);
   }
-  cmdField.appendChild(tplWrap);
+
+  cmdField.appendChild(tplSection);
   body.appendChild(cmdField);
 
   const cwdInput = textInput(button?.cwd ?? '', app.dir ?? '');
@@ -1006,6 +1601,20 @@ function openButtonForm(app, button = null) {
   openDrawer({ title: t(isEdit ? 'editButton' : 'addButton'), body, foot });
 }
 
+/* Open Native Terminal Handler */
+async function openAppTerminal(app) {
+  if (!app.dir) {
+    toast(t('noDirConfigured'), { error: true });
+    return;
+  }
+  try {
+    await api(`/api/apps/${encodeURIComponent(app.id)}/open-terminal`, { method: 'POST' });
+    toast(t('terminalOpened'));
+  } catch (err) {
+    toast(t('requestFailed') + err.message, { error: true });
+  }
+}
+
 /* Pin / Unpin App Handler */
 async function togglePinApp(app) {
   const nextPinned = !app.pinned;
@@ -1042,6 +1651,76 @@ async function runButton(app, button) {
     button.state = 'running';
     updateCardsTelemetry();
     updateGlobalStats();
+
+    if (button.type === 'exec') {
+      dockState.appId = app.id;
+      toggleDock(true);
+
+      const liveId = 'live-' + Date.now();
+      const liveItem = {
+        id: liveId,
+        buttonId: button.id,
+        label: button.label,
+        running: true,
+        isRunning: true,
+        output: '',
+        startedAt: Date.now()
+      };
+      dockState.history.unshift(liveItem);
+      dockState.selectedId = liveId;
+      renderDockHistoryList();
+      renderDockOutput();
+
+      if (dockState.eventSource) {
+        dockState.eventSource.close();
+        dockState.eventSource = null;
+      }
+
+      const streamUrl = `/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/stream`;
+      const es = new EventSource(streamUrl);
+      dockState.eventSource = es;
+
+      es.addEventListener('init', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.output) {
+            liveItem.output = data.output;
+            if (dockState.selectedId === liveId) renderDockOutput();
+          }
+        } catch {}
+      });
+
+      es.addEventListener('data', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.chunk) {
+            liveItem.output += data.chunk;
+            if (dockState.selectedId === liveId) renderDockOutput();
+          }
+        } catch {}
+      });
+
+      es.addEventListener('end', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          liveItem.running = false;
+          liveItem.isRunning = false;
+          liveItem.exitCode = data.exitCode ?? 0;
+          liveItem.success = data.success ?? (data.exitCode === 0);
+          liveItem.killed = data.killed ?? false;
+          renderDockHistoryList();
+          if (dockState.selectedId === liveId) renderDockOutput();
+        } catch {}
+        es.close();
+        if (dockState.eventSource === es) dockState.eventSource = null;
+        loadApps();
+      });
+
+      es.onerror = () => {
+        es.close();
+        if (dockState.eventSource === es) dockState.eventSource = null;
+      };
+    }
   } catch (err) {
     if (err.status === 409) toast(t('busy'), { error: true });
     else toast(t('requestFailed') + err.message, { error: true });
@@ -1198,10 +1877,10 @@ $('#langBtn').addEventListener('click', () => {
 });
 $('#langBtn').textContent = t('langName');
 
-// Copy AI Usage
+// Copy AI Agent Guide
 $('#copyAiUsageBtn').addEventListener('click', async () => {
   try {
-    const res = await api('/api/aiusage');
+    const res = await api('/api/agent-guide');
     await copyText(res.content, t('aiUsageCopied'));
   } catch (err) {
     toast(t('requestFailed') + err.message, { error: true });
@@ -1287,6 +1966,7 @@ function initTheme() {
 
 initMode();
 initTheme();
+initDock();
 loadApps();
 loadSystem();
 clearInterval(state.pollTimer);

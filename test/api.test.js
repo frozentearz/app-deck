@@ -6,10 +6,18 @@ import { join, dirname } from 'node:path';
 import { Store } from '../src/store.js';
 import { createServer } from '../src/index.js';
 
-async function makeApi(t, { pm2Path, selfExit } = {}) {
+async function makeApi(t, { pm2Path, selfExit, openTerminal } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'appdeck-api-'));
   const store = await new Store({ dataDir }).init();
-  const server = await createServer({ store, pm2Path: pm2Path ?? join(tmpdir(), 'no-pm2'), publicDir: null, selfExit: selfExit ?? (() => {}), elevate: false, startupHome: join(tmpdir(), 'no-such-home') });
+  const server = await createServer({
+    store,
+    pm2Path: pm2Path ?? join(tmpdir(), 'no-pm2'),
+    publicDir: null,
+    selfExit: selfExit ?? (() => {}),
+    elevate: false,
+    startupHome: join(tmpdir(), 'no-such-home'),
+    openTerminal: openTerminal ?? (() => true),
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
@@ -511,4 +519,86 @@ test('POST /api/system/startup returns manual sudo command', async (t) => {
   const body = await res.json();
   assert.equal(body.enabled, true);
   assert.match(body.manual, /^sudo /);
+});
+
+test('POST /api/apps/:id/open-terminal opens terminal in app dir', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, dir: '/tmp' }),
+  });
+
+  const res = await api.fetch('/api/apps/blog/open-terminal', { method: 'POST' });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.dir, '/tmp');
+});
+
+test('POST /api/apps/:id/open-terminal returns 400 when dir is missing', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/nodir', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, id: 'nodir', dir: null }),
+  });
+
+  const res = await api.fetch('/api/apps/nodir/open-terminal', { method: 'POST' });
+  assert.equal(res.status, 400);
+});
+
+test('POST /api/apps/:id/open-terminal returns 404 when app does not exist', async (t) => {
+  const api = await makeApi(t);
+  const res = await api.fetch('/api/apps/missing/open-terminal', { method: 'POST' });
+  assert.equal(res.status, 404);
+});
+
+test('GET /api/apps/:id/buttons/:btn/stream returns SSE stream', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
+  });
+  await api.fetch('/api/apps/blog/buttons/streamtest', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: '流式', type: 'exec', command: 'node -e "console.log(\'line1\'); setTimeout(() => console.log(\'line2\'), 100)"', shell: true }),
+  });
+
+  // Start run
+  await api.fetch('/api/apps/blog/buttons/streamtest/run', { method: 'POST' });
+
+  // Connect to stream
+  const res = await api.fetch('/api/apps/blog/buttons/streamtest/stream');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/event-stream/);
+  const text = await res.text();
+  assert.match(text, /line1|line2/);
+});
+
+test('DELETE /api/apps/:id/logs clears all app logs', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
+  });
+  await api.fetch('/api/apps/blog/buttons/b1', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'b1', type: 'exec', command: 'node -e "console.log(\'b1\')"', shell: true }),
+  });
+  await api.fetch('/api/apps/blog/buttons/b1/run', { method: 'POST' });
+  await new Promise((r) => setTimeout(r, 200));
+
+  const before = await (await api.fetch('/api/apps/blog/logs')).json();
+  assert.ok(before.entries.length > 0);
+
+  const del = await api.fetch('/api/apps/blog/logs', { method: 'DELETE' });
+  assert.equal(del.status, 200);
+
+  const after = await (await api.fetch('/api/apps/blog/logs')).json();
+  assert.equal(after.entries.length, 0);
 });

@@ -4,14 +4,14 @@
 
 ## 项目定位
 
-app-deck 是一个跨平台「项目台账 + 脚本按钮控制台」：一个网页管理所有 web 应用与脚本——项目分组、按钮执行、pm2 托管、AI 自动接入。
+app-deck 是一个跨平台「项目台账 + 脚本按钮控制台」：一个网页管理所有 web 应用与脚本（项目分组、按钮执行、pm2 托管、AI 自动接入）。
 
 - 项目路径：`/Users/frazier/Project/Personal/app-deck`
 - 状态：**仅初始化，尚未编写任何代码，git 无提交**（main 分支，4 个未跟踪文件）
 
 ## 已定决策（不可随意推翻）
 
-1. **引擎选型：pm2 托管层 + 自研执行器**。pm2 负责常驻进程的守护/开机自启/崩溃重启/日志；一次性命令（备份、部署等）走自研 `subprocess` 执行器——pm2 会把一次性命令的正常退出误判为崩溃反复拉起，所以必须双轨
+1. **引擎选型：pm2 托管层 + 自研执行器**。pm2 负责常驻进程的守护/开机自启/崩溃重启/日志；一次性命令（备份、部署等）走自研 `subprocess` 执行器（pm2 会把一次性命令的正常退出误判为崩溃反复拉起，所以必须双轨）
 2. **API-first**：HTTP API 是第一等公民，UI 只是 API 的客户端。AI 接入零成本，走同一套 API
 3. **幂等 upsert**：`PUT /api/apps/:appId` 与 `PUT /api/apps/:appId/buttons/:buttonId` 均为覆盖语义（AI 重复 curl 不报错、不产生重复数据）
 4. **端口固定 6969**；数据文件 `~/.app-deck/apps.json`（全局语义，已 gitignore）
@@ -46,13 +46,13 @@ app-deck 是一个跨平台「项目台账 + 脚本按钮控制台」：一个�
 | `/Users/frazier/Project/Personal/app-deck/package.json` | app-deck 0.1.0，ESM，Node>=18，`npm start` / `npm run dev` |
 | `/Users/frazier/Project/Personal/app-deck/.gitignore` | node_modules、`data/apps.json`、日志、OS 文件 |
 | `/Users/frazier/Project/Personal/app-deck/README.md` | 特性表、架构图、安装三步、启动方式、pm2 守护/自启命令速查（含 Win 差异） |
-| `/Users/frazier/Project/Personal/app-deck/docs/AIUsage.md` | AI 接入指南 + 完整 API 文档（数据模型、接口清单、curl 示例、幂等/并发约定）——**API 实现以此文档为规格** |
+| `/Users/frazier/Project/Personal/app-deck/docs/AIUsage.md` | AI 接入指南 + 完整 API 文档（数据模型、接口清单、curl 示例、幂等/并发约定）：**API 实现以此文档为规格** |
 
 **AIUsage.md 中 API 已设计但未实现**，接口清单：项目 CRUD（GET/PUT/POST/PATCH/DELETE）、按钮 CRUD、run/status/logs、system 类（health/export/import）。注意：**「守护进程/开机自启」开关对应的 system API 在 AIUsage.md 中尚未设计，需新 Agent 补充**（如 `POST /api/system/daemon`、`POST /api/system/startup`）。
 
 ## 待办（下一步工作，按序）
 
-1. **先出 Markdown 实现方案**（用户全局规范：大改动必须先方案确认）——数据模型/API/前端布局/i18n 结构
+1. **先出 Markdown 实现方案**（用户全局规范：大改动必须先方案确认）: 数据模型/API/前端布局/i18n 结构
 2. **TDD 实现核心代码**（用户全局规范：先写失败测试再实现，一次一测，只测公开接口）
    - `src/store.js`：apps.json 持久化（`~/.app-deck/apps.json`）
    - `src/executor.js`：一次性命令执行器（跨平台，进程树清理，输出采集）
@@ -60,7 +60,7 @@ app-deck 是一个跨平台「项目台账 + 脚本按钮控制台」：一个�
    - `src/index.js`：HTTP 服务 :6969，路由按 AIUsage.md
    - `public/`：单页前端（一屏 list、顶部状态栏含守护/自启开关、半屏弹窗、i18n、响应式）
    - 状态栏守护/自启开关的 API 需补充设计
-3. 跑测试验证 → 补 README 使用说明
+3. 跑测试验证：补 README 使用说明
 4. 提交 git（**中文提交信息**，格式「feat: xxx」）
 
 ## 环境事实
@@ -76,10 +76,10 @@ app-deck 是一个跨平台「项目台账 + 脚本按钮控制台」：一个�
 
 ## Suggested Skills（下一 Agent 应调用）
 
-- `matt·tdd` —— 用户全局规范强制 TDD（红-绿-重构，一次一测，只测公开接口，禁 Mock 私有逻辑）
-- `matt·implement` —— 依据 AIUsage.md 规格实现后端 API 与执行器
-- `design-taste-frontend` —— 前端单页（一屏流、状态栏、半屏弹窗、i18n、响应式），避免模板化
-- `matt·plan-mode` —— 用户全局规范：大改动前先出 Markdown 方案等确认（此项目尚未实施，开工必走）
+- `matt·tdd` : 用户全局规范强制 TDD（红-绿-重构，一次一测，只测公开接口，禁 Mock 私有逻辑）
+- `matt·implement` : 依据 AIUsage.md 规格实现后端 API 与执行器
+- `design-taste-frontend` : 前端单页（一屏流、状态栏、半屏弹窗、i18n、响应式），避免模板化
+- `matt·plan-mode` : 用户全局规范：大改动前先出 Markdown 方案等确认（此项目尚未实施，开工必走）
 
 ## 交接提醒（用户全局规范红线）
 

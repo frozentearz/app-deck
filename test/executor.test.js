@@ -33,3 +33,14 @@ test('cancel kills process tree quickly', async () => {
   assert.equal(result.killed, true);
   assert.ok(result.durationMs < 8000);
 });
+
+test('emits data event on stdout chunk', async () => {
+  const ex = new Executor({ command: 'node -e "process.stdout.write(\'chunk1\'); process.stdout.write(\'chunk2\')"', shell: true });
+  const chunks = [];
+  ex.on('data', ({ chunk }) => chunks.push(chunk));
+  const finished = new Promise((resolve) => ex.on('finished', resolve));
+  ex.start();
+  const res = await finished;
+  assert.equal(res.exitCode, 0);
+  assert.equal(chunks.join(''), 'chunk1chunk2');
+});

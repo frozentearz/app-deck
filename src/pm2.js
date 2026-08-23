@@ -100,7 +100,7 @@ export class Pm2 {
     return { ok: true, manual };
   }
 
-  /** macOS：pm2 强制要求 root 才执行 startup，绕过它——自己写 launchd plist + launchctl load（用户级，无需 sudo） */
+  /** macOS：pm2 强制要求 root 才执行 startup，绕过它：自己写 launchd plist + launchctl load（用户级，无需 sudo） */
   async startupElevated() {
     if (process.platform !== 'darwin') {
       const { manual } = await this.startup();

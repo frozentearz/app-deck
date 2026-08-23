@@ -178,10 +178,64 @@
     </div>
   </div>
 
+  <!-- 底部工作区 Dock (Master-Detail 左右双栏输出与执行记录) -->
+  <div id="dockPanel" class="dock-panel collapsed" aria-hidden="true">
+    <div class="dock-header">
+      <div class="dock-tabs">
+        <button class="dock-tab active" id="dockTabText" data-i18n="terminalView">📄 文本</button>
+        <button class="dock-tab" id="dockTabJson" data-i18n="jsonView">{} JSON 树</button>
+        <button class="dock-tab" id="dockTabMd" data-i18n="mdView">📋 Markdown</button>
+        <span class="dock-session-title" id="dockSessionTitle"></span>
+      </div>
+
+      <div class="dock-controls">
+        <div class="dock-search-box">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="dockSearchInput" placeholder="过滤 (grep)...">
+        </div>
+        <button class="icon-btn" id="dockCopyBtn" title="复制输出 (⌘C)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="dock-fullscreen-btn" id="btnFullscreen" title="全屏切换 (快捷键: F)">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          <span id="fsText" data-i18n="fullscreen">全屏</span>
+          <kbd class="shortcut-kbd" id="fsKbdHint">F</kbd>
+        </button>
+        <button class="dock-fullscreen-btn" id="btnCloseDock" title="关闭 Dock (快捷键: Esc)">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span data-i18n="close">关闭</span>
+          <kbd class="shortcut-kbd">Esc</kbd>
+        </button>
+      </div>
+    </div>
+
+    <div class="dock-split-container">
+      <!-- 左栏：当前项目执行历史列表 -->
+      <div class="dock-left-history">
+        <div class="dock-left-header">
+          <span id="dockLeftTitle" data-i18n="execRecords">执行记录</span>
+          <button class="icon-btn" id="dockClearHistoryBtn" title="清空该项目记录" style="width:22px;height:22px;padding:2px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+        <div class="dock-left-list" id="dockHistoryList"></div>
+      </div>
+
+      <!-- 右栏：多模态日志与流式输出 -->
+      <div class="dock-right-detail">
+        <div class="dock-body" id="dockBody"></div>
+        <div class="dock-footer-bar" id="dockFooterBar">
+          <div class="dock-footer-left" id="dockFooterLeft"></div>
+          <div class="dock-footer-right" id="dockFooterRight"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 全局 Toast 提示 -->
   <div id="toast" class="toast hidden"></div>
 
-  <script type="module" src="i18n.js?v=2.1"></script>
-  <script type="module" src="app.js?v=2.1"></script>
+  <script type="module" src="i18n.js?v=2.2"></script>
+  <script type="module" src="app.js?v=2.2"></script>
 </body>
 </html>

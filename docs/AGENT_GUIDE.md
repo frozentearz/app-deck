@@ -1,5 +1,7 @@
 # AI 接入指南与 API 文档
 
+> **文档版本 (Document Version)**: `v2.3.0` (2026-08-24)
+> 
 > 面向 AI Agent 与自动化脚本。阅读本文后即可通过 HTTP API 为 App-Deck 自动登记项目、维护按钮配置，无需人工操作 UI。
 
 ## 目录
@@ -12,6 +14,7 @@
 6. [AI 工作流示例](#6-ai-工作流示例)
 7. [幂等与并发](#7-幂等与并发)
 8. [最佳实践](#8-最佳实践)
+9. [按钮输出多模态格式化规范](#9-按钮输出多模态格式化规范)
 
 ---
 
@@ -54,6 +57,7 @@ AI 接入 App-Deck 的标准流程：
   "dir": "/Users/frazier/Project/blog",
   "url": "http://localhost:3000",
   "port": 3000,
+  "pinned": false,
   "buttons": []
 }
 ```
@@ -66,6 +70,7 @@ AI 接入 App-Deck 的标准流程：
 | `dir` | string | ❌ | 项目目录（按钮命令的相对基准目录） |
 | `url` | string | ❌ | 项目访问地址（用于「进入/打开」类按钮） |
 | `port` | number | ❌ | 服务端口（用于运行状态探活） |
+| `pinned` | boolean | ❌ | 是否置顶（置顶项目排在前面） |
 | `buttons` | Button[] | ✅ | 按钮列表 |
 
 ### Button（按钮）
@@ -97,7 +102,28 @@ AI 接入 App-Deck 的标准流程：
 | 常驻服务 / dev server，需要守护与自启 | `managed` | `npm run dev`、`python app.py` |
 | 一次性任务：备份 / 部署 / 数据同步 / 构建 | `exec` | `bash backup.sh`、`rsync -a ...` |
 
-> 注意：**不要**把一次性命令设为 `managed`——pm2 会把正常退出当作崩溃而反复拉起。
+> 注意：**不要**把一次性命令设为 `managed`（pm2 会把正常退出当作崩溃而反复拉起）。
+
+### 4.1 按钮命令 (command) 支持的脚本形态
+
+按钮底层直接由操作系统的 Shell 环境执行，AI 可以灵活生成以下多种脚本形态：
+
+1. **直接调用独立脚本文件**：
+   - 依赖项目工作目录（`dir` / `cwd`），支持相对路径：
+   - `python3 scripts/backup.py`
+   - `./deploy.sh`
+2. **多命令串联与管道控制 (复合脚本)**：
+   - 顺序依赖执行（`&&`）：
+     `git pull && npm install && npm run build`
+   - 条件分支检测（`||`）：
+     `test -d .venv || python3 -m venv .venv`
+   - 管道与过滤（`|`）：
+     `ps aux | grep node | grep -v grep`
+3. **内联解释器脚本 (无需在磁盘创建脚本文件)**：
+   - **内联 Python**（通过 `-c` 参数嵌入完整代码）：
+     `python3 -c "import time; print('准备备份...'); time.sleep(1); print('完成')"`
+   - **内联 Bash**（通过 `-c` 参数嵌入多语句与循环）：
+     `bash -c 'for i in 1 2 3 4 5; do echo "进度: $i"; sleep 1; done'`
 
 ## 5. 接口清单
 
@@ -109,7 +135,7 @@ AI 接入 App-Deck 的标准流程：
 | GET | `/api/apps/:appId` | 获取单个项目 |
 | PUT | `/api/apps/:appId` | **创建 / 覆盖**项目（幂等 upsert，AI 主用） |
 | POST | `/api/apps` | 创建项目（`id` 由服务端生成，UI 用） |
-| PATCH | `/api/apps/:appId` | 局部更新（UI 编辑用） |
+| PATCH | `/api/apps/:appId` | 局部更新（支持修改置顶状态 `{ "pinned": true }`） |
 | DELETE | `/api/apps/:appId` | 删除项目（同时停止托管进程） |
 
 ### 5.2 按钮 CRUD
@@ -121,18 +147,24 @@ AI 接入 App-Deck 的标准流程：
 | PATCH | `/api/apps/:appId/buttons/:buttonId` | 局部更新按钮 |
 | DELETE | `/api/apps/:appId/buttons/:buttonId` | 删除按钮 |
 
-### 5.3 执行与状态
+### 5.3 执行、流式与执行记录
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/apps/:appId/buttons/:buttonId/run` | 执行按钮（managed 交给 pm2；exec 直接运行） |
 | POST | `/api/apps/:appId/buttons/:buttonId/cancel` | 停止正在执行的命令（进程树清理） |
+| GET | `/api/apps/:appId/buttons/:buttonId/stream` | **SSE 实时流式日志推流**（`data: chunk`，结束推 `event: end`） |
+| POST | `/api/apps/:appId/open-terminal` | 一键唤醒宿主系统本地终端并自动进入项目工作目录 |
 | GET | `/api/apps/:appId/buttons/:buttonId/status` | 按钮/进程状态 |
-| GET | `/api/apps/:appId/buttons/:buttonId/logs` | 执行日志与历史记录（时间、退出码、输出摘要、成败） |
+| GET | `/api/apps/:appId/buttons/:buttonId/logs` | 按钮执行记录（时间、退出码、输出摘要、成败） |
+| DELETE | `/api/apps/:appId/buttons/:buttonId/logs` | **清空指定按钮的所有执行记录** |
+| DELETE | `/api/apps/:appId/buttons/:buttonId/logs/:runId` | **删除某条特定的执行记录** |
 | GET | `/api/apps/:appId/status` | 项目运行状态探活（TCP 端口探测，无缓存） |
 | GET | `/api/apps/:appId/logs` | 项目级执行记录（合并所有按钮历史，带按钮 label） |
+| DELETE | `/api/apps/:appId/logs` | **清空项目的所有执行记录** |
+| DELETE | `/api/apps/:appId/logs/:runId` | **删除某条特定的执行记录** |
 
-**项目探活响应**：`{ "online": true|false|null }`。有 `port` 时真实 TCP 连接探测；无 port 返回 `null`。前端每 5 秒轮询一次。
+**项目探活响应**：`{ "online": true|false|null }`。有 `port` 时真实 TCP 连接探测；无 port 返回 `null`。
 
 **项目级执行记录响应**：`{ "entries": [ { ...历史条目, "label": "按钮名" } ] }`，按时间倒序（最新在前）。
 
@@ -189,19 +221,23 @@ curl -X PUT http://localhost:6969/api/apps/tomcat \
       { "id": "start",   "label": "启动",   "type": "exec", "command": "bin/catalina.sh start" },
       { "id": "stop",    "label": "停止",   "type": "exec", "command": "bin/catalina.sh stop" },
       { "id": "restart", "label": "重启",   "type": "exec", "command": "bin/catalina.sh restart" },
-      { "id": "logs",    "label": "查看日志", "type": "exec", "command": "tail -f logs/catalina.out" }
+      { "id": "logs",    "label": "查看日志", "type": "exec", "command": "tail -10 logs/catalina.out" }
     ]
   }'
 ```
 
 > 未安装或未配置：`dir` 和 `command` 可留空先登记占位，点击按钮时返回 `400 { "error": "请先配置项目路径与项目按钮的脚本" }`，在 UI 编辑表单里补全即可。
 
-### 6.2 追加一个按钮（幂等）
+### 6.2 追加一个带内联 Python 的维护按钮（幂等）
 
 ```bash
-curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/clean \
+curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/health-check \
   -H 'Content-Type: application/json' \
-  -d '{ "label": "清理缓存", "type": "exec", "command": "rm -rf work/Catalina" }'
+  -d '{
+    "label": "探测健康状态",
+    "type": "exec",
+    "command": "python3 -c \"import urllib.request; print(\\\"Tomcat状态码:\\\", urllib.request.urlopen(\\\"http://localhost:8080\\\").getcode())\""
+  }'
 ```
 
 ### 6.3 执行按钮
@@ -227,6 +263,20 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 
 1. **AI 登记后必须验证**：`GET /api/apps/:appId` 确认写入成功
 2. **识别一次性 vs 常驻**：把握不定时优先 `exec`，避免 pm2 反复拉起
-3. **命令写绝对路径**：cwd 单独用 `dir`/`cwd` 字段表达，不要拼在 command 里，便于维护
-4. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
-5. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
+3. **巧用内联解释器脚本**：临时小工具、探测或轻量数据统计无需在磁盘创建独立脚本文件，直接在 `command` 字段中写 `python3 -c "..."` 或 `bash -c "..."`
+4. **命令写相对路径**：cwd 单独用 `dir`/`cwd` 字段表达，不要拼在 command 里，便于维护
+5. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
+6. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
+
+## 9. 按钮输出多模态格式化规范
+
+App-Deck 控制台内置了智能多模输出查看器，AI 在为项目编写脚本或内联命令时，可充分利用以下 4 种输出形态：
+
+| 输出形态 | 触发与展现机制 | 推荐应用场景 | 示例命令 |
+|---|---|---|---|
+| **📄 文本 / ANSI 日志** | 标准 stdout 文本输出。支持 ANSI 色彩解析与 `INFO`（蓝）、`WARN`（黄）、`ERROR`（红）日志级别智能高亮 | 普通文本、构建日志、服务输出、系统探测 | `echo -e "\033[32m[INFO]\033[0m 服务启动成功"` |
+| **{} JSON 结构树** | 当输出首尾为 `{}` 或 `[]` 时自动激活 JSON 树视图，提供键值高亮与结构折叠 | 接口健康探活、配置读取、统计数据提取 | `curl -s http://localhost:6969/api/health` |
+| **📋 Markdown + 表格** | 当输出包含 Markdown 标题 `#` 或表格 `\|---\|` 时，自动解析为美观富文本 | 系统报告、指标矩阵、环境快照 | `echo "# 状态报告\n\n| 指标 | 值 |\n|---|---|\n| CPU | 12% |"` |
+| **📊 Mermaid 流程/架构图** | 在 Markdown 输出中嵌入 ````mermaid` 代码块，前端自动渲染为高清矢量 SVG 图表 | 服务调用拓扑、部署工作流、依赖架构 | 嵌入 ````mermaid\nflowchart LR\n  A --> B\n```` |
+
+

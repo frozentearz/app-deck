@@ -105,6 +105,22 @@ export class Store {
   deleteHistory(appId, buttonId) {
     delete this.history[`${appId}/${buttonId}`];
   }
+
+  deleteAppHistory(appId) {
+    for (const k of Object.keys(this.history)) {
+      if (k.startsWith(`${appId}/`)) {
+        delete this.history[k];
+      }
+    }
+  }
+
+  deleteHistoryEntry(appId, buttonId, entryId) {
+    const key = `${appId}/${buttonId}`;
+    if (!this.history[key]) return false;
+    const initialLen = this.history[key].length;
+    this.history[key] = this.history[key].filter((e) => e.id !== entryId);
+    return this.history[key].length < initialLen;
+  }
 }
 
 export { HISTORY_LIMIT };
