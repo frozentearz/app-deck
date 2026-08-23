@@ -2288,61 +2288,54 @@ input, textarea, select {
   gap: 12px;
 }
 
-.dock-tabs {
+.dock-meta-title {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.dock-tab {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  font-weight: 550;
-  padding: 4px 10px;
-  border-radius: var(--r-btn);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  line-height: 1;
-  transition: all 0.15s ease;
-}
-
-.dock-tab .tab-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  line-height: 1;
-}
-
-.dock-tab .tab-icon.json-icon {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 11px;
-  color: var(--accent);
-  letter-spacing: -1.5px;
-  margin-right: 1px;
-}
-
-.dock-tab:hover {
-  background: var(--panel-hover);
-  color: var(--text);
-}
-
-.dock-tab.active {
-  background: var(--panel-inset);
-  color: var(--text);
-  border-color: var(--border);
+  gap: 8px;
+  min-width: 0;
 }
 
 .dock-session-title {
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-left: 8px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
   font-family: var(--font-mono);
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.format-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  line-height: 1.3;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.format-badge.format-json {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+}
+
+.format-badge.format-markdown {
+  background: rgba(192, 132, 252, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.28);
+}
+
+.format-badge.format-text {
+  background: var(--panel-inset);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .dock-controls {

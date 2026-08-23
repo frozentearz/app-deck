@@ -82,7 +82,8 @@ AI 接入 App-Deck 的标准流程：
   "type": "managed",
   "command": "npm run dev",
   "cwd": "/Users/frazier/Project/blog",
-  "shell": true
+  "shell": true,
+  "outputFormat": "text"
 }
 ```
 
@@ -93,7 +94,8 @@ AI 接入 App-Deck 的标准流程：
 | `type` | string | ✅ | `managed` = pm2 托管（守护/自启/崩溃重启）；`exec` = 一次性执行 |
 | `command` | string | ❌ | 执行的 shell 命令（可先留空，未配置时点击按钮返回 400 提示） |
 | `cwd` | string | ❌ | 工作目录，缺省继承 `app.dir` |
-| `shell` | boolean | ✅ | 是否经 shell 执行（默认 `true`） |
+| `shell` | boolean | ❌ | 是否经 shell 执行（默认 `true`） |
+| `outputFormat` | string | ❌ | 输出渲染格式：`text`（默认文本/ANSI）、`json`（JSON 语法树）、`markdown`（Markdown 与 Mermaid 图表） |
 
 **type 选择规则**
 
@@ -228,15 +230,27 @@ curl -X PUT http://localhost:6969/api/apps/tomcat \
 
 > 未安装或未配置：`dir` 和 `command` 可留空先登记占位，点击按钮时返回 `400 { "error": "请先配置项目路径与项目按钮的脚本" }`，在 UI 编辑表单里补全即可。
 
-### 6.2 追加一个带内联 Python 的维护按钮（幂等）
+### 6.2 追加指定输出格式的维护按钮（JSON 与 Markdown 示例）
 
 ```bash
-curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/health-check \
+# 注册 JSON 语法树解析按钮
+curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/api-status \
   -H 'Content-Type: application/json' \
   -d '{
-    "label": "探测健康状态",
+    "label": "健康探测 (JSON)",
     "type": "exec",
-    "command": "python3 -c \"import urllib.request; print(\\\"Tomcat状态码:\\\", urllib.request.urlopen(\\\"http://localhost:8080\\\").getcode())\""
+    "outputFormat": "json",
+    "command": "curl -s http://localhost:8080/api/health"
+  }'
+
+# 注册 Markdown / Mermaid 架构图生成按钮
+curl -X PUT http://localhost:6969/api/apps/tomcat/buttons/arch-diagram \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "label": "查看微服务架构",
+    "type": "exec",
+    "outputFormat": "markdown",
+    "command": "echo \"# 微服务拓扑\n\n\`\`\`mermaid\nflowchart LR\n  Gateway --> Auth\n  Gateway --> Order\n\`\`\`\""
   }'
 ```
 
@@ -263,20 +277,21 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 
 1. **AI 登记后必须验证**：`GET /api/apps/:appId` 确认写入成功
 2. **识别一次性 vs 常驻**：把握不定时优先 `exec`，避免 pm2 反复拉起
-3. **巧用内联解释器脚本**：临时小工具、探测或轻量数据统计无需在磁盘创建独立脚本文件，直接在 `command` 字段中写 `python3 -c "..."` 或 `bash -c "..."`
-4. **命令写相对路径**：cwd 单独用 `dir`/`cwd` 字段表达，不要拼在 command 里，便于维护
-5. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
-6. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
+3. **显式声明 outputFormat**：当脚本产物为结构化 JSON 或含 Mermaid 图表的 Markdown 时，在按钮上显式声明 `"outputFormat": "json"` 或 `"outputFormat": "markdown"`，App-Deck Dock 底部控制台将直接精准渲染，用户无需手动切换
+4. **巧用内联解释器脚本**：临时小工具、探测或轻量数据统计无需在磁盘创建独立脚本文件，直接在 `command` 字段中写 `python3 -c "..."` 或 `bash -c "..."`
+5. **命令写相对路径**：cwd 单独用 `dir`/`cwd` 字段表达，不要拼在 command 里，便于维护
+6. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
+7. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
 
 ## 9. 按钮输出多模态格式化规范
 
-App-Deck 控制台内置了智能多模输出查看器，AI 在为项目编写脚本或内联命令时，可充分利用以下 4 种输出形态：
+App-Deck 控制台内置了多模态渲染器，根据按钮的 `outputFormat` 属性（或内容特征）进行渲染：
 
-| 输出形态 | 触发与展现机制 | 推荐应用场景 | 示例命令 |
+| outputFormat | 展现与渲染机制 | 推荐应用场景 | 示例命令 |
 |---|---|---|---|
-| **📄 文本 / ANSI 日志** | 标准 stdout 文本输出。支持 ANSI 色彩解析与 `INFO`（蓝）、`WARN`（黄）、`ERROR`（红）日志级别智能高亮 | 普通文本、构建日志、服务输出、系统探测 | `echo -e "\033[32m[INFO]\033[0m 服务启动成功"` |
-| **{} JSON 结构树** | 当输出首尾为 `{}` 或 `[]` 时自动激活 JSON 树视图，提供键值高亮与结构折叠 | 接口健康探活、配置读取、统计数据提取 | `curl -s http://localhost:6969/api/health` |
-| **📋 Markdown + 表格** | 当输出包含 Markdown 标题 `#` 或表格 `\|---\|` 时，自动解析为美观富文本 | 系统报告、指标矩阵、环境快照 | `echo "# 状态报告\n\n| 指标 | 值 |\n|---|---|\n| CPU | 12% |"` |
-| **📊 Mermaid 流程/架构图** | 在 Markdown 输出中嵌入 ````mermaid` 代码块，前端自动渲染为高清矢量 SVG 图表 | 服务调用拓扑、部署工作流、依赖架构 | 嵌入 ````mermaid\nflowchart LR\n  A --> B\n```` |
+| **`text`** (默认) | 标准 stdout 文本输出。支持 ANSI 彩色控制符与 `INFO`（蓝）、`WARN`（黄）、`ERROR`（红）日志级别高亮 | 普通文本、构建日志、服务输出、系统探测 | `echo -e "\033[32m[INFO]\033[0m 服务启动成功"` |
+| **`json`** | 自动解析 JSON 并呈现为可交互折叠的语法树，高亮键值与类型（解析异常时平滑降级展示文本） | 接口健康探活、配置读取、统计数据提取 | `curl -s http://localhost:6969/api/health` |
+| **`markdown`** | 完整支持 Markdown 语法（标题、表格、加粗、列表）以及嵌入的 ````mermaid` 高清矢量 SVG 流程图/时序图渲染 | 系统分析报告、指标矩阵、环境快照、架构拓扑 | 包含 ````mermaid\nflowchart LR\n  A --> B\n```` |
+
 
 

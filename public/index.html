@@ -182,11 +182,9 @@
   <div id="dockPanel" class="dock-panel collapsed" aria-hidden="true">
     <div class="dock-resize-handle" id="dockResizeHandle" title="拖拽调整高度"></div>
     <div class="dock-header">
-      <div class="dock-tabs">
-        <button class="dock-tab active" id="dockTabText"><span class="tab-icon">📄</span> <span data-i18n="terminalView">文本</span></button>
-        <button class="dock-tab" id="dockTabJson"><span class="tab-icon json-icon">{}</span> <span data-i18n="jsonView">JSON 树</span></button>
-        <button class="dock-tab" id="dockTabMd"><span class="tab-icon">📋</span> <span data-i18n="mdView">Markdown</span></button>
+      <div class="dock-meta-title">
         <span class="dock-session-title" id="dockSessionTitle"></span>
+        <span class="dock-format-badge" id="dockFormatBadge"></span>
       </div>
 
       <div class="dock-controls">

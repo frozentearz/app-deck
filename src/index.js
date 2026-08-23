@@ -16,6 +16,7 @@ const DEFAULT_PORT = 6969;
 const DEFAULT_DATA_DIR = join(homedir(), '.app-deck');
 const APP_ID_RE = /^[a-z0-9-]+$/;
 const BUTTON_TYPES = ['managed', 'exec'];
+const BUTTON_OUTPUT_FORMATS = ['text', 'json', 'markdown'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -82,6 +83,10 @@ function normalizeButton(input, { appId, id } = {}) {
   }
   if (!input.label || typeof input.label !== 'string') throw new Error('label is required');
   if (!BUTTON_TYPES.includes(input.type)) throw new Error(`type must be one of ${BUTTON_TYPES.join(',')}`);
+  const outputFormat = input.outputFormat ?? 'text';
+  if (!BUTTON_OUTPUT_FORMATS.includes(outputFormat)) {
+    throw new Error(`outputFormat must be one of ${BUTTON_OUTPUT_FORMATS.join(',')}`);
+  }
   return {
     id: buttonId,
     label: input.label,
@@ -89,6 +94,7 @@ function normalizeButton(input, { appId, id } = {}) {
     command: input.command ?? null,
     cwd: input.cwd ?? null,
     shell: input.shell ?? true,
+    outputFormat,
   };
 }
 
@@ -97,7 +103,7 @@ function pm2Name(appId, buttonId) {
 }
 
 function buttonChanged(a, b) {
-  return a.type !== b.type || a.command !== b.command || a.cwd !== b.cwd || a.shell !== b.shell;
+  return a.type !== b.type || a.command !== b.command || a.cwd !== b.cwd || a.shell !== b.shell || a.outputFormat !== b.outputFormat;
 }
 
 async function teardownButton(pm2, store, runs, appId, button) {
@@ -462,6 +468,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
           killed: result.killed,
           summary: result.summary,
           output: result.output,
+          outputFormat: button.outputFormat ?? 'text',
         };
         persistHistory(appId, buttonId, entry).catch(() => {});
         runs[key] = { state: 'idle', lastResult: result };
@@ -480,6 +487,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
           id: runId, startedAt: now, finishedAt: now,
           exitCode: 0, success: true, killed: false,
           summary: `pm2 start ${name}`, output: '',
+          outputFormat: button.outputFormat ?? 'text',
         }).catch(() => {});
         send(res, 202, { state: 'running', runId });
       } catch (err) {
@@ -631,7 +639,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
       const entries = [];
       for (const b of app.buttons) {
         for (const e of store.listHistory(appId, b.id)) {
-          entries.push({ ...e, buttonId: b.id, label: b.label });
+          entries.push({ ...e, buttonId: b.id, label: b.label, outputFormat: e.outputFormat || b.outputFormat || 'text' });
         }
       }
       entries.sort((a, b) => b.startedAt - a.startedAt);

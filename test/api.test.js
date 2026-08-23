@@ -609,6 +609,7 @@ test('GET /api/agent-guide returns agent guide document', async (t) => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.ok(body.content.includes('# AI 接入指南与 API 文档'));
+  assert.ok(body.content.includes('outputFormat'));
 });
 
 test('GET /api/aiusage backward-compatible alias returns agent guide document', async (t) => {
@@ -617,5 +618,68 @@ test('GET /api/aiusage backward-compatible alias returns agent guide document', 
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.ok(body.content.includes('# AI 接入指南与 API 文档'));
+  assert.ok(body.content.includes('outputFormat'));
 });
+
+test('PUT button supports outputFormat (text/json/markdown) and rejects invalid format', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(SAMPLE_APP),
+  });
+
+  // Valid formats
+  for (const fmt of ['text', 'json', 'markdown']) {
+    const res = await api.fetch(`/api/apps/blog/buttons/btn-${fmt}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: fmt, type: 'exec', outputFormat: fmt, command: 'echo 1', shell: true }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.outputFormat, fmt);
+  }
+
+  // Default format is text
+  const resDef = await api.fetch('/api/apps/blog/buttons/btn-default', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'default', type: 'exec', command: 'echo 1', shell: true }),
+  });
+  assert.equal(resDef.status, 200);
+  assert.equal((await resDef.json()).outputFormat, 'text');
+
+  // Invalid format rejected
+  const resBad = await api.fetch('/api/apps/blog/buttons/btn-bad', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'bad', type: 'exec', outputFormat: 'invalid_format', command: 'echo 1', shell: true }),
+  });
+  assert.equal(resBad.status, 400);
+});
+
+test('exec run persists outputFormat in logs history', async (t) => {
+  const api = await makeApi(t);
+  await api.fetch('/api/apps/blog', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...SAMPLE_APP, dir: tmpdir() }),
+  });
+  await api.fetch('/api/apps/blog/buttons/json-btn', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'JSON Probe', type: 'exec', outputFormat: 'json', command: 'echo "{\\"ok\\":true}"', shell: true }),
+  });
+
+  await api.fetch('/api/apps/blog/buttons/json-btn/run', { method: 'POST' });
+  await new Promise((r) => setTimeout(r, 200));
+
+  const logs = await (await api.fetch('/api/apps/blog/logs')).json();
+  assert.ok(logs.entries.length > 0);
+  const entry = logs.entries.find((e) => e.buttonId === 'json-btn');
+  assert.ok(entry);
+  assert.equal(entry.outputFormat, 'json');
+});
+
 

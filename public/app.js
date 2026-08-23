@@ -661,7 +661,12 @@ function createActionTile(app, button) {
   tag.className = `type-tag ${button.type === 'managed' ? 'managed' : 'exec'}`;
   tag.textContent = button.type === 'managed' ? 'pm2' : 'exec';
 
-  head.append(label, tag);
+  const format = button.outputFormat || 'text';
+  const fmtTag = document.createElement('span');
+  fmtTag.className = `format-badge format-${format}`;
+  fmtTag.textContent = format === 'json' ? '{} JSON' : (format === 'markdown' ? '📋 MD' : '📄 LOG');
+
+  head.append(label, tag, fmtTag);
   info.appendChild(head);
 
   if (button.command) {
@@ -1003,7 +1008,6 @@ const dockState = {
   appId: null,
   history: [],
   selectedId: null,
-  activeTab: 'terminal', // 'terminal' | 'json' | 'markdown'
   autoScroll: true,
   eventSource: null,
   filterQuery: ''
@@ -1058,11 +1062,6 @@ function initDock() {
   // Resize Handle
   initDockResize();
 
-  // Tabs
-  $('#dockTabText')?.addEventListener('click', () => setDockTab('terminal'));
-  $('#dockTabJson')?.addEventListener('click', () => setDockTab('json'));
-  $('#dockTabMd')?.addEventListener('click', () => setDockTab('markdown'));
-
   // Copy
   $('#dockCopyBtn')?.addEventListener('click', () => {
     const entry = dockState.history.find(h => h.id === dockState.selectedId);
@@ -1107,14 +1106,6 @@ function initDock() {
       }
     }
   });
-}
-
-function setDockTab(tab) {
-  dockState.activeTab = tab;
-  $('#dockTabText')?.classList.toggle('active', tab === 'terminal');
-  $('#dockTabJson')?.classList.toggle('active', tab === 'json');
-  $('#dockTabMd')?.classList.toggle('active', tab === 'markdown');
-  renderDockOutput();
 }
 
 function toggleDock(show) {
@@ -1247,8 +1238,13 @@ function renderDockHistoryList() {
     time.className = 'history-item-time';
     time.textContent = item.startedAt ? formatDateTime(item.startedAt) : (item.time || '');
 
+    const format = item.outputFormat || 'text';
+    const fmtBadge = document.createElement('span');
+    fmtBadge.className = `format-badge format-${format}`;
+    fmtBadge.textContent = format === 'json' ? '{} JSON' : (format === 'markdown' ? '📋 MD' : '📄 LOG');
+
     info.append(title, time);
-    left.append(badge, info);
+    left.append(badge, info, fmtBadge);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'icon-btn';
@@ -1283,28 +1279,33 @@ function renderDockHistoryList() {
 async function renderDockOutput() {
   const item = dockState.history.find(h => h.id === dockState.selectedId);
   const titleEl = $('#dockSessionTitle');
+  const badgeEl = $('#dockFormatBadge');
   const bodyEl = $('#dockBody');
   const footLeft = $('#dockFooterLeft');
   const footRight = $('#dockFooterRight');
 
   if (!item) {
     if (titleEl) titleEl.textContent = `[${dockState.appId || ''} :: ${t('noHistory')}]`;
+    if (badgeEl) badgeEl.innerHTML = '';
     if (bodyEl) bodyEl.innerHTML = `<span style="color:var(--text-muted); padding: 16px; display: block;">${t('noHistory')}</span>`;
     if (footLeft) footLeft.innerHTML = '';
     if (footRight) footRight.innerHTML = '';
     return;
   }
 
+  const format = item.outputFormat || 'text';
+
   if (titleEl) {
     titleEl.textContent = `[${dockState.appId} :: ${item.label || item.buttonId || ''}]`;
   }
 
+  if (badgeEl) {
+    badgeEl.className = `format-badge format-${format}`;
+    badgeEl.textContent = format === 'json' ? '{} JSON' : (format === 'markdown' ? '📋 MD' : '📄 LOG');
+  }
+
   const text = item.output || '';
-  if (dockState.activeTab === 'terminal') {
-    bodyEl.className = 'dock-body';
-    bodyEl.innerHTML = highlightLog(text) || `<div style="color: var(--text-muted); padding: 16px;">(No output)</div>`;
-    applyDockFilter();
-  } else if (dockState.activeTab === 'json') {
+  if (format === 'json') {
     bodyEl.className = 'dock-body';
     const tree = formatJsonTree(text);
     if (tree) {
@@ -1312,9 +1313,13 @@ async function renderDockOutput() {
     } else {
       bodyEl.innerHTML = `<div class="hint" style="padding: 16px;">(Invalid JSON)</div>${highlightLog(text)}`;
     }
-  } else if (dockState.activeTab === 'markdown') {
+  } else if (format === 'markdown') {
     bodyEl.className = 'dock-body markdown-view-container';
     await renderMarkdown(text, bodyEl);
+  } else {
+    bodyEl.className = 'dock-body';
+    bodyEl.innerHTML = highlightLog(text) || `<div style="color: var(--text-muted); padding: 16px;">(No output)</div>`;
+    applyDockFilter();
   }
 
   if (dockState.autoScroll) {
@@ -1569,6 +1574,15 @@ function openButtonForm(app, button = null) {
   `;
   body.appendChild(formField('buttonType', typeSelect));
 
+  // Output Format selector (text / json / markdown)
+  const formatSelect = document.createElement('select');
+  formatSelect.innerHTML = `
+    <option value="text" ${(!button?.outputFormat || button?.outputFormat === 'text') ? 'selected' : ''}>${t('formatText')}</option>
+    <option value="json" ${button?.outputFormat === 'json' ? 'selected' : ''}>${t('formatJson')}</option>
+    <option value="markdown" ${button?.outputFormat === 'markdown' ? 'selected' : ''}>${t('formatMarkdown')}</option>
+  `;
+  body.appendChild(formField('outputFormat', formatSelect, 'outputFormatHint'));
+
   // Command input + Copy button + 4 Script Modes Presets
   const commandInput = textArea(button?.command);
   commandInput.rows = 3;
@@ -1705,6 +1719,7 @@ function openButtonForm(app, button = null) {
     const payload = {
       label: labelInput.value.trim(),
       type: typeSelect.value,
+      outputFormat: formatSelect.value,
       command: commandInput.value.trim() || null,
       cwd: cwdInput.value.trim() || null,
     };
