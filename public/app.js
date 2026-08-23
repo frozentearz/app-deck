@@ -1108,6 +1108,12 @@ async function showDockForApp(appId, selectId = null) {
   }
 }
 
+function getFormatBadgeText(format) {
+  if (format === 'json') return '{} JSON';
+  if (format === 'markdown') return '📋 MD';
+  return '📄 LOG';
+}
+
 function renderDockHistoryList() {
   const container = $('#dockHistoryList');
   if (!container) return;
@@ -1172,7 +1178,7 @@ function renderDockHistoryList() {
     const format = item.outputFormat || 'text';
     const fmtBadge = document.createElement('span');
     fmtBadge.className = `format-badge format-${format}`;
-    fmtBadge.textContent = format === 'json' ? '{} JSON' : (format === 'markdown' ? '📋 MD' : '📄 LOG');
+    fmtBadge.textContent = getFormatBadgeText(format);
 
     info.append(title, time);
     left.append(badge, info, fmtBadge);
@@ -1232,7 +1238,7 @@ async function renderDockOutput() {
 
   if (badgeEl) {
     badgeEl.className = `format-badge format-${format}`;
-    badgeEl.textContent = format === 'json' ? '{} JSON' : (format === 'markdown' ? '📋 MD' : '📄 LOG');
+    badgeEl.textContent = getFormatBadgeText(format);
   }
 
   const text = item.output || '';

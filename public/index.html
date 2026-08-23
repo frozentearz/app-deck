@@ -104,7 +104,7 @@
       </div>
       <div class="empty-text">
         <h3 data-i18n="emptyHint">还没有项目。点击下方按钮，登记你的第一个项目</h3>
-        <p>支持常驻服务 pm2 守护与单次脚本执行，也可让 AI 自动登记</p>
+        <p data-i18n="emptySub">支持常驻服务 pm2 守护与单次脚本执行，也可让 AI 自动登记</p>
       </div>
       <button class="primary-btn" data-action="add-app">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -135,7 +135,7 @@
   <div id="enginePopover" class="engine-popover hidden">
     <div class="engine-popover-head">
       <div class="engine-popover-title">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span data-i18n="engineTitle">系统引擎与守护配置</span>
       </div>
       <button class="popover-close-btn" id="closeEnginePopoverBtn">×</button>
@@ -146,7 +146,7 @@
       <div class="engine-item">
         <div class="engine-item-info">
           <div class="engine-item-label" data-i18n="daemon">守护进程</div>
-          <div class="engine-item-sub">由 pm2 守护后台运行，自动重启崩溃进程</div>
+          <div class="engine-item-sub" data-i18n="daemonSub">由 pm2 守护后台运行，自动重启崩溃进程</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="daemonSwitch">
@@ -157,7 +157,7 @@
       <div class="engine-item">
         <div class="engine-item-info">
           <div class="engine-item-label" data-i18n="startup">开机自启</div>
-          <div class="engine-item-sub">开机自动拉起 pm2 与 App-Deck 控制台</div>
+          <div class="engine-item-sub" data-i18n="startupSub">开机自动拉起 pm2 与 App-Deck 控制台</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="startupSwitch">
@@ -167,11 +167,11 @@
 
       <div class="engine-diagnostics">
         <div class="diag-row">
-          <span class="diag-key">pm2 状态:</span>
+          <span class="diag-key" data-i18n="pm2StatusLabel">pm2 状态:</span>
           <span class="diag-val" id="pm2DiagStatus">检测中...</span>
         </div>
         <div class="diag-row">
-          <span class="diag-key">运行端口:</span>
+          <span class="diag-key" data-i18n="listenPortLabel">运行端口:</span>
           <span class="diag-val">http://localhost:6969</span>
         </div>
       </div>
@@ -190,7 +190,7 @@
       <div class="dock-controls">
         <div class="dock-search-box">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="dockSearchInput" placeholder="过滤 (grep)...">
+          <input type="text" id="dockSearchInput" data-i18n-placeholder="filterLogs" placeholder="过滤 (grep)...">
         </div>
         <button class="icon-btn" id="dockCopyBtn" title="复制输出 (⌘C)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
