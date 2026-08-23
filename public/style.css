@@ -2584,20 +2584,26 @@ input, textarea, select {
   gap: 8px;
 }
 
-.dock-footer-btn {
+.dock-footer-btn,
+.dock-time-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: 24px;
+  max-height: 24px;
+  box-sizing: border-box;
   padding: 0 9px;
   font-size: 11px;
-  font-weight: 550;
-  border-radius: var(--r-btn);
+  border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--panel-inset);
+  line-height: 1;
+}
+
+.dock-footer-btn {
+  font-weight: 550;
   color: var(--text-secondary);
   cursor: pointer;
-  line-height: 1;
   transition: all 0.15s ease;
 }
 
@@ -2619,18 +2625,11 @@ input, textarea, select {
 }
 
 .dock-time-pill {
-  display: inline-flex;
-  align-items: center;
   gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: var(--r-btn);
-  line-height: 1;
+  font-weight: 500;
+  user-select: none;
 }
 
 /* ==========================================================================

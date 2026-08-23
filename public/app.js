@@ -1342,7 +1342,12 @@ async function renderDockOutput() {
     if (item.startedAt) {
       const timeTag = document.createElement('span');
       timeTag.className = 'dock-time-pill';
-      timeTag.innerHTML = `<span>🕒</span> <span>${formatDateTime(item.startedAt)}</span>`;
+      timeTag.innerHTML = `
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7; flex-shrink:0;">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>${formatDateTime(item.startedAt)}</span>
+      `;
       footLeft.appendChild(timeTag);
     }
   }
