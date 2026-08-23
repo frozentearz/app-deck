@@ -735,6 +735,11 @@ function toggleLogsTray(appId) {
    Output Formatter & Ansi Parser
    ========================================================================== */
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function parseAnsi(text) {
   if (!text) return '';
   const colors = {
@@ -744,7 +749,6 @@ function parseAnsi(text) {
     93: 'ansi-bright-yellow', 94: 'ansi-bright-blue', 95: 'ansi-bright-magenta',
     96: 'ansi-bright-cyan', 97: 'ansi-bright-white',
   };
-  const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   
   const parts = text.split(/\x1b\[([0-9;]+)m/);
   let html = '';
@@ -803,7 +807,6 @@ function formatJsonTree(text) {
   try {
     const obj = typeof text === 'object' ? text : JSON.parse(text.trim());
     const jsonStr = JSON.stringify(obj, null, 2);
-    const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const formatted = escapeHtml(jsonStr).replace(
       /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
       (match) => {
@@ -843,8 +846,6 @@ async function ensureMermaid() {
 }
 
 async function renderMarkdown(text, container) {
-  const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  
   const mermaidBlocks = [];
   let processed = text.replace(/```mermaid([\s\S]*?)```/g, (match, code) => {
     const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
@@ -1072,7 +1073,7 @@ function renderDockHistoryList() {
     left.className = 'history-item-left';
 
     const badge = document.createElement('span');
-    if (item.running || item.isRunning) {
+    if (item.running) {
       badge.className = 'activity-tag running';
       badge.textContent = '⏳';
     } else if (item.killed) {
@@ -1130,7 +1131,7 @@ function renderDockHistoryList() {
   });
 }
 
-function renderDockOutput() {
+async function renderDockOutput() {
   const item = dockState.history.find(h => h.id === dockState.selectedId);
   const titleEl = $('#dockSessionTitle');
   const bodyEl = $('#dockBody');
@@ -1164,7 +1165,7 @@ function renderDockOutput() {
     }
   } else if (dockState.activeTab === 'markdown') {
     bodyEl.className = 'dock-body markdown-view-container';
-    renderMarkdown(text, bodyEl);
+    await renderMarkdown(text, bodyEl);
   }
 
   if (dockState.autoScroll) {
@@ -1196,7 +1197,7 @@ function renderDockOutput() {
 
   if (footRight) {
     footRight.innerHTML = '';
-    if (item.running || item.isRunning) {
+    if (item.running) {
       const killBtn = document.createElement('button');
       killBtn.className = 'ghost-btn danger';
       killBtn.style.fontSize = '11px';
@@ -1206,7 +1207,6 @@ function renderDockOutput() {
           await api(`/api/apps/${encodeURIComponent(dockState.appId)}/buttons/${encodeURIComponent(item.buttonId)}/cancel`, { method: 'POST' });
           toast(t('runCancelled'));
           item.running = false;
-          item.isRunning = false;
           item.killed = true;
           renderDockHistoryList();
           renderDockOutput();
@@ -1662,7 +1662,6 @@ async function runButton(app, button) {
         buttonId: button.id,
         label: button.label,
         running: true,
-        isRunning: true,
         output: '',
         startedAt: Date.now()
       };
@@ -1704,7 +1703,6 @@ async function runButton(app, button) {
         try {
           const data = JSON.parse(e.data);
           liveItem.running = false;
-          liveItem.isRunning = false;
           liveItem.exitCode = data.exitCode ?? 0;
           liveItem.success = data.success ?? (data.exitCode === 0);
           liveItem.killed = data.killed ?? false;

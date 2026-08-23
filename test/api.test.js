@@ -602,3 +602,20 @@ test('DELETE /api/apps/:id/logs clears all app logs', async (t) => {
   const after = await (await api.fetch('/api/apps/blog/logs')).json();
   assert.equal(after.entries.length, 0);
 });
+
+test('GET /api/agent-guide returns agent guide document', async (t) => {
+  const api = await makeApi(t);
+  const res = await api.fetch('/api/agent-guide');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.content.includes('# AI 接入指南与 API 文档'));
+});
+
+test('GET /api/aiusage backward-compatible alias returns agent guide document', async (t) => {
+  const api = await makeApi(t);
+  const res = await api.fetch('/api/aiusage');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.content.includes('# AI 接入指南与 API 文档'));
+});
+
