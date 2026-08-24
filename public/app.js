@@ -1371,9 +1371,81 @@ function applyDockFilter() {
   });
 }
 
+function showConfirmModal({ title, message, confirmText, cancelText, danger = true }) {
+  return new Promise((resolve) => {
+    const modal = $('#confirmModal');
+    const titleEl = $('#confirmModalTitle');
+    const descEl = $('#confirmModalDesc');
+    const iconWrap = $('#confirmModalIconWrap');
+    const confirmBtn = $('#confirmModalConfirmBtn');
+    const cancelBtn = $('#confirmModalCancelBtn');
+
+    if (!modal || !confirmBtn || !cancelBtn) {
+      resolve(window.confirm(message || title || ''));
+      return;
+    }
+
+    if (titleEl) titleEl.textContent = title || t('confirm') || '操作确认';
+    if (descEl) descEl.textContent = message || '';
+    if (confirmBtn) {
+      confirmBtn.textContent = confirmText || (danger ? t('delete') : t('confirm'));
+      confirmBtn.className = danger ? 'danger-btn' : 'primary-btn';
+    }
+    if (cancelBtn) cancelBtn.textContent = cancelText || t('cancel');
+
+    if (iconWrap) {
+      iconWrap.className = `confirm-modal-icon-wrap ${danger ? 'danger' : 'warning'}`;
+    }
+
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+
+    let settled = false;
+    function cleanup(result) {
+      if (settled) return;
+      settled = true;
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onOverlay);
+      document.removeEventListener('keydown', onKeydown);
+      resolve(result);
+    }
+
+    function onConfirm(e) { e.stopPropagation(); cleanup(true); }
+    function onCancel(e) { e.stopPropagation(); cleanup(false); }
+    function onOverlay(e) { if (e.target === modal) cleanup(false); }
+    function onKeydown(e) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        cleanup(false);
+      } else if (e.key === 'Enter') {
+        e.stopPropagation();
+        cleanup(true);
+      }
+    }
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    modal.addEventListener('click', onOverlay);
+    document.addEventListener('keydown', onKeydown);
+
+    setTimeout(() => {
+      confirmBtn.focus();
+    }, 50);
+  });
+}
+
 async function clearCurrentAppHistory() {
   if (!dockState.appId) return;
-  if (!confirm(t('confirmClearLogs'))) return;
+  const ok = await showConfirmModal({
+    title: t('clearLogsTitle'),
+    message: t('confirmClearLogs'),
+    confirmText: t('clearLogs'),
+    danger: true
+  });
+  if (!ok) return;
   try {
     await api(`/api/apps/${encodeURIComponent(dockState.appId)}/logs`, { method: 'DELETE' });
     toast(t('logsCleared'));
@@ -1733,7 +1805,13 @@ function openButtonForm(app, button = null) {
     delBtn.className = 'ghost-btn danger';
     delBtn.textContent = t('delete');
     delBtn.addEventListener('click', async () => {
-      if (!confirm(t('confirmDeleteButton').replace('{label}', button.label))) return;
+      const ok = await showConfirmModal({
+        title: t('deleteButtonTitle'),
+        message: t('confirmDeleteButton').replace('{label}', button.label),
+        confirmText: t('delete'),
+        danger: true
+      });
+      if (!ok) return;
       try {
         await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}`, { method: 'DELETE' });
         toast(t('deleteOk'));
@@ -1781,7 +1859,13 @@ async function togglePinApp(app) {
 
 /* Delete App Handler */
 async function deleteApp(app) {
-  if (!confirm(t('confirmDeleteApp').replace('{name}', app.name))) return;
+  const ok = await showConfirmModal({
+    title: t('deleteAppTitle'),
+    message: t('confirmDeleteApp').replace('{name}', app.name),
+    confirmText: t('delete'),
+    danger: true
+  });
+  if (!ok) return;
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}`, { method: 'DELETE' });
     toast(t('deleteOk'));
@@ -1887,7 +1971,13 @@ async function runButton(app, button) {
 }
 
 async function cancelRun(app, button) {
-  if (!confirm(t('confirmCancelRun'))) return;
+  const ok = await showConfirmModal({
+    title: t('cancelRunTitle'),
+    message: t('confirmCancelRun'),
+    confirmText: t('stop'),
+    danger: true
+  });
+  if (!ok) return;
   try {
     await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/cancel`, { method: 'POST' });
     toast(t('cancelOk'));
