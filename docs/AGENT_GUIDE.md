@@ -6,7 +6,7 @@
 > 
 > App-Deck 是项目运维与快捷脚本的**唯一定义中心**，人类与 AI 共同使用这一套资产：
 > 
-> 1. **用户通过 Web 界面统一查看**：用户可以直接在 Web 上查看各个项目的快捷功能与运行状态，并享受 JSON 语法树、Markdown 与 Mermaid 架构图的自动渲染；
+> 1. **用户通过 Web 界面统一查看**：用户可以直接在 Web 控制台查看各个项目的快捷功能与运行状态，并享受 JSON 语法树、Markdown 与 Mermaid 架构图的自动渲染；
 > 2. **AI 代为执行与跨 Agent 运维**：
 >    - 用户可以让 AI 代为执行某个按钮；
 >    - **跨 Agent 一键接管**：就算跨不同的 Agent（比如 Claude、Cursor 等），也只要一键复制界面顶部的 AI 接入文档发给 Agent，任何新 Agent 都能立刻通过 API 接管运维工作；
@@ -25,7 +25,7 @@
 5. [接口清单](#5-接口清单)
    - [5.1 项目 CRUD](#51-项目-crud)
    - [5.2 按钮 CRUD](#52-按钮-crud)
-   - [5.3 执行、流式与执行记录（含响应 Schema）](#53-执行流式与执行记录含响应-schema)
+   - [5.3 执行、流式与执行记录](#53-执行流式与执行记录)
    - [5.4 系统配置与守护管理](#54-系统配置与守护管理)
 6. [AI 工作流示例](#6-ai-工作流示例)
    - [6.1 登记一个新项目（幂等 PUT）](#61-登记一个新项目幂等-put)
@@ -242,7 +242,7 @@ flowchart LR
 | PATCH | `/api/apps/:appId/buttons/:buttonId` | 局部更新按钮 |
 | DELETE | `/api/apps/:appId/buttons/:buttonId` | 删除按钮 |
 
-### 5.3 执行、流式与执行记录（含响应 Schema）
+### 5.3 执行、流式与执行记录
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -259,73 +259,29 @@ flowchart LR
 | DELETE | `/api/apps/:appId/logs` | **清空项目的所有执行记录** |
 | DELETE | `/api/apps/:appId/logs/:runId` | **删除某条特定的执行记录** |
 
-#### 详细响应结构体 Schema
+**项目探活响应**：`{ "online": true|false|null }`。有 `port` 时真实 TCP 连接探测；无 port 返回 `null`。
 
-- **项目探活响应 (`GET /api/apps/:id/status`)**：
-  ```json
-  {
-    "online": true
-  }
-  ```
-  有 `port` 时真实 TCP 连接探测（`true` 在线 / `false` 离线）；无 port 返回 `null`。
+**项目级执行记录响应**：`{ "entries": [ { ...历史条目, "label": "按钮名" } ] }`，按时间倒序（最新在前）。
 
-- **run 响应 (`POST .../run`)**：
-  ```json
-  {
-    "state": "running",
-    "runId": 1
-  }
-  ```
-  状态码 `202 Accepted`。执行结果不在此响应中，通过 `logs` 接口异步查询。
+**run 响应**：`202 { "state": "running", "runId": 1 }`。执行结果不在此响应中，通过 `logs` 接口查询（历史记录持久化，刷新不丢）。
 
-- **按钮 status 响应 (`GET .../buttons/:btn/status`)**：
-  ```json
-  {
-    "state": "idle",
-    "startedAt": 1720000000000,
-    "lastResult": {
-      "exitCode": 0,
-      "success": true,
-      "killed": false,
-      "finishedAt": 1720000001000
-    }
-  }
-  ```
+**status 响应**：`{ "state": "idle|running", "startedAt": 时间戳|null, "lastResult": { "exitCode", "success", "killed", "finishedAt" }|null }`
 
-- **按钮 logs 响应 (`GET .../buttons/:btn/logs`)**：
-  历史记录数组（最新 50 条，倒序返回）：
-  ```json
-  [
-    {
-      "id": "r1",
-      "startedAt": 1720000000000,
-      "finishedAt": 1720000001000,
-      "exitCode": 0,
-      "success": true,
-      "killed": false,
-      "outputFormat": "text",
-      "summary": "输出摘要（末尾 200 字）",
-      "output": "完整控制台输出（截断 64KB）"
-    }
-  ]
-  ```
+**logs 响应**：历史记录数组（最新 50 条，倒序返回），每条：
 
-- **项目级全量执行记录响应 (`GET /api/apps/:id/logs`)**：
-  ```json
-  {
-    "entries": [
-      {
-        "id": "r1",
-        "label": "启动服务",
-        "startedAt": 1720000000000,
-        "finishedAt": 1720000001000,
-        "exitCode": 0,
-        "success": true,
-        "output": "..."
-      }
-    ]
-  }
-  ```
+```json
+{
+  "id": "r1",
+  "startedAt": 1720000000000,
+  "finishedAt": 1720000001000,
+  "exitCode": 0,
+  "success": true,
+  "killed": false,
+  "outputFormat": "text",
+  "summary": "输出摘要（末尾 200 字）",
+  "output": "完整输出（截断 64KB）"
+}
+```
 
 ### 5.4 系统配置与守护管理
 
@@ -339,10 +295,11 @@ flowchart LR
 | POST | `/api/system/daemon` | 开关 app-deck 自身守护（body `{ "enabled": true / false }`） |
 | POST | `/api/system/startup` | 开关开机自启（body `{ "enabled": true / false }`） |
 
-> **守护/自启行为说明**：
-> - `POST /api/system/daemon` 开启时：pm2 拉起 app-deck 后，当前进程自动退出（避免端口冲突）；关闭时：先返回响应，稍后停止 pm2 进程；
-> - `POST /api/system/startup`：在 macOS/Linux 上 `pm2 startup` 需要 sudo 权限，接口返回 `{ "enabled": true, "manual": "sudo env PATH=... pm2 startup ..." }`，需人工在终端执行该命令；Windows 走 `pm2-windows-startup`；
-> - 若主机未安装 pm2，守护与自启接口均返回 `503`，且 `pm2Installed: false`。
+**守护/自启说明**：
+
+- `POST /api/system/daemon` 开启时：pm2 拉起 app-deck 后，当前进程自动退出（避免端口冲突）；关闭时：先返回响应，稍后停止 pm2 进程
+- `POST /api/system/startup` 在 macOS/Linux 上 `pm2 startup` 需要 sudo，接口返回 `{ "enabled": true, "manual": "sudo env PATH=... pm2 startup ..." }`，需人工在终端执行该命令；Windows 走 `pm2-windows-startup`
+- pm2 未安装时守护/自启接口返回 503，`pm2Installed` 为 false
 
 ---
 
@@ -480,6 +437,6 @@ App-Deck 控制台内置了多模态渲染器，根据按钮的 `outputFormat` �
 
 | outputFormat | 展现与渲染机制 | 推荐应用场景 | 示例命令 |
 |---|---|---|---|
-| **`text`** (默认) | 标准 stdout 文本输出。支持 ANSI 彩色控制符与 `INFO`（蓝）、`WARN`（黄）、`ERROR`（红）日志级别高亮 | 普通文本、构建日志、服务输出、系统探测 | `echo -e "[32m[INFO][0m 服务启动成功"` |
+| **`text`** (默认) | 标准 stdout 文本输出。支持 ANSI 彩色控制符与 `INFO`（蓝）、`WARN`（黄）、`ERROR`（红）日志级别高亮 | 普通文本、构建日志、服务输出、系统探测 | `echo -e "[INFO] 服务启动成功"` |
 | **`json`** | 自动解析 JSON 并呈现为可交互折叠的语法树，高亮键值与类型（解析异常时平滑降级展示文本） | 接口健康探活、配置读取、统计数据提取 | `curl -s http://localhost:6969/api/health` |
-| **`markdown`** | 完整支持 Markdown 语法（标题、表格、加粗、列表）以及嵌入的 ````mermaid` 高清矢量 SVG 流程图/时序图渲染 | 系统分析报告、指标矩阵、环境快照、架构拓扑 | 包含 \`\`\`mermaid flowchart LR; A --> B; \`\`\` |
+| **`markdown`** | 完整支持 Markdown 语法（标题、表格、加粗、列表）以及嵌入的 ````mermaid` 高清矢量 SVG 流程图/时序图渲染 | 系统分析报告、指标矩阵、环境快照、架构拓扑 | 包含 ````mermaid flowchart LR; A --> B; ```` |
