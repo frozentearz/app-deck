@@ -1039,6 +1039,38 @@ function initDock() {
   });
 }
 
+function highlightActiveCard(appId) {
+  document.querySelectorAll('.card.dock-focused').forEach(c => {
+    if (c.dataset.appId !== appId) c.classList.remove('dock-focused');
+  });
+  if (appId) {
+    const targetCard = document.querySelector(`.card[data-app-id="${appId}"]`);
+    if (targetCard) targetCard.classList.add('dock-focused');
+  }
+}
+
+function ensureCardVisibleAboveDock(appId) {
+  if (!appId) return;
+  const card = document.querySelector(`.card[data-app-id="${appId}"]`);
+  if (!card) return;
+
+  const dock = $('#dockPanel');
+  if (dock && dock.classList.contains('expanded')) return;
+
+  const dockHeight = dock ? dock.offsetHeight : 340;
+  const cardRect = card.getBoundingClientRect();
+  const navbarHeight = 64;
+  const safeBottom = window.innerHeight - dockHeight - 20;
+
+  if (cardRect.bottom > safeBottom) {
+    const scrollAmount = cardRect.bottom - safeBottom;
+    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+  } else if (cardRect.top < navbarHeight) {
+    const scrollAmount = cardRect.top - (navbarHeight + 16);
+    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+  }
+}
+
 function toggleDock(show) {
   const dock = $('#dockPanel');
   if (!dock) return;
@@ -1051,6 +1083,7 @@ function toggleDock(show) {
     dock.classList.add('collapsed');
     dock.classList.remove('expanded');
     dock.setAttribute('aria-hidden', 'true');
+    highlightActiveCard(null);
     const btn = $('#btnFullscreen');
     if (btn) btn.classList.remove('active');
     const text = $('#fsText');
@@ -1079,6 +1112,7 @@ function toggleDockExpand() {
 
 async function showDockForApp(appId, selectId = null) {
   dockState.appId = appId;
+  highlightActiveCard(appId);
   const app = state.apps.find(a => a.id === appId) || { id: appId, name: appId };
   
   const leftTitle = $('#dockLeftTitle');
@@ -1087,6 +1121,7 @@ async function showDockForApp(appId, selectId = null) {
   }
 
   toggleDock(true);
+  ensureCardVisibleAboveDock(appId);
 
   try {
     const res = await api(`/api/apps/${encodeURIComponent(appId)}/logs`);

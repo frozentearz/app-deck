@@ -737,6 +737,11 @@ input, textarea, select {
   box-shadow: 0 0 0 1px var(--accent-border), var(--shadow-sm), var(--card-highlight);
 }
 
+.card.dock-focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.35), var(--card-highlight);
+}
+
 .pinned-badge {
   display: inline-flex;
   align-items: center;
