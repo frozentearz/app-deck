@@ -1057,32 +1057,35 @@ function ensureCardVisibleAboveDock(appId) {
   const dock = $('#dockPanel');
   if (dock && dock.classList.contains('expanded')) return;
 
-  const dockHeight = dock ? dock.offsetHeight : 340;
-  const cardRect = card.getBoundingClientRect();
-  const navbarHeight = 64;
-  const safeBottom = window.innerHeight - dockHeight - 20;
+  requestAnimationFrame(() => {
+    const dockHeight = dock ? dock.offsetHeight : 340;
+    const cardRect = card.getBoundingClientRect();
+    const navbarHeight = 64;
+    const safeBottom = window.innerHeight - dockHeight - 20;
 
-  if (cardRect.bottom > safeBottom) {
-    const scrollAmount = cardRect.bottom - safeBottom;
-    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-  } else if (cardRect.top < navbarHeight) {
-    const scrollAmount = cardRect.top - (navbarHeight + 16);
-    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-  }
+    if (cardRect.bottom > safeBottom) {
+      const scrollAmount = cardRect.bottom - safeBottom;
+      window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    } else if (cardRect.top < navbarHeight) {
+      const scrollAmount = cardRect.top - (navbarHeight + 16);
+      window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    }
+  });
 }
 
 function toggleDock(show) {
   const dock = $('#dockPanel');
   if (!dock) return;
-  if (show === undefined) {
-    dock.classList.toggle('collapsed');
-  } else if (show) {
+  const isOpening = show === true || (show === undefined && dock.classList.contains('collapsed'));
+  if (isOpening) {
     dock.classList.remove('collapsed');
     dock.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('dock-open');
   } else {
     dock.classList.add('collapsed');
     dock.classList.remove('expanded');
     dock.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('dock-open');
     highlightActiveCard(null);
     const btn = $('#btnFullscreen');
     if (btn) btn.classList.remove('active');

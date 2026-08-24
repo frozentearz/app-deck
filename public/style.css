@@ -710,6 +710,11 @@ input, textarea, select {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  transition: padding-bottom 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.dock-open .container {
+  padding-bottom: calc(var(--dock-height, 340px) + 60px);
 }
 
 .app-deck-grid {
