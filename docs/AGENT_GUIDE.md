@@ -35,6 +35,7 @@ AI 接入 App-Deck 的标准执行流程（**强制遵循计划先行与人机�
 2. **输出计划表（展示给用户并等待确认）**：
    - **禁止未经确认直接调用 API 静默写入**；
    - AI 必须先整理一份清晰直白的 Markdown 计划表呈现给用户，清晰说明要登记什么项目、注入哪些按钮；
+   - **若包含高危/破坏性按钮，必须在计划表中显式打上 `⚠️ [高危/破坏性]` 标签**；
    - **标准计划表示例**：
 
      #### 拟登记项目：个人博客 (blog)
@@ -47,10 +48,49 @@ AI 接入 App-Deck 的标准执行流程（**强制遵循计划先行与人机�
        | 运行测试 | `test` | 单次执行 | text | `npm test` | 执行全套自动化测试 |
        | 接口探活 | `health` | 单次执行 | json | `curl -s http://localhost:3000/api/health` | 自动以可折叠 JSON 树展示 |
        | 架构拓扑 | `arch` | 单次执行 | markdown | `cat docs/architecture.md` | 自动渲染 Markdown 与 Mermaid 图 |
+       | ⚠️ 清空缓存 | `clean` | 单次执行 | text | `rm -rf .next/cache` | ⚠️ [破坏性] 清除本地构建缓存 |
 
 3. **用户同意后调用 API 注册**：在用户明确确认后，AI 再发起 `PUT /api/apps/:appId`（或 `PUT .../buttons/:buttonId`）幂等写入配置；
-4. **验证登记结果**：调用 `GET /api/apps/:appId` 确认配置生效；
+4. **注册后三维闭环测试验收（自动化与安全隔离）**：
+   - **配置验证**：`GET /api/apps/:appId` 确认配置生效；
+   - **常规动作真实验收**：对非破坏性按钮触发 `POST .../run`，通过 `GET .../logs` 校验 `exitCode === 0`；
+   - **端口探活验收**：针对 Web 常驻服务，调用 `GET /api/apps/:appId/status` 校验 `{ "online": true }`；
+   - **破坏性按钮安全隔离**：对标记为 `⚠️ [破坏性]` 的高危按钮**严禁自动试跑**，仅做静态语法/Dry-run 校验，执行权留给人类在 UI 手动触发；
 5. **后续持续维护**：后续有新脚本或参数调整时，同样先出简明表格确认再覆盖写入。
+
+### 1.1 注册后三维验收闭环与破坏性按钮安全防御矩阵
+
+#### 1.1.1 三维闭环验收 SOP (Three-Dimension Verification)
+AI 在注册完成后，必须按顺序执行三维验收闭环：
+
+```mermaid
+flowchart LR
+  A["1. 配置级验收<br/>(GET /api/apps/:id)"] --> B["2. 动作级验收<br/>(POST .../run + logs)"] --> C["3. 端口探活验收<br/>(GET .../status)"]
+```
+
+1. **第 1 维：静态配置一致性验收**
+   - 调用 `GET /api/apps/:appId`，确认返回的 buttons 清单、工作目录 `dir`、端口 `port` 与预期的 Markdown 计划表 100% 一致。
+2. **第 2 维：安全动作真实验收（试跑与断言）**
+   - 针对非破坏性按钮（如 `test`、`build`、`health` 探活）发起 `POST /api/apps/:appId/buttons/:buttonId/run`；
+   - 紧接着拉取 `GET /api/apps/:appId/buttons/:buttonId/logs`，断言 `exitCode === 0` 且 `success === true`，确保无路径错漏或依赖缺失。
+3. **第 3 维：服务端口探活验收**
+   - 针对 Web 常驻服务，发起启动后调用 `GET /api/apps/:appId/status`；
+   - 断言返回 `{ "online": true }`，确保 TCP 端口已被真正监听，卡片翡翠绿呼吸灯正常亮起。
+
+#### 1.1.2 破坏性按钮四级安全防御矩阵 (Destructive Action Safety Matrix)
+
+| 风险类别 | 典型命令 | 潜在破坏后果 | AI 防御与验收策略 |
+|---|---|---|---|
+| **1. 数据销毁与清空** | `drop database`、`prisma migrate reset`、`rm -rf data/*`、`flushall` | 数据丢失且不可逆 | **严禁自动试跑**。仅做 `test -d` 路径存在性检查或 `--dry-run` 模拟演练。 |
+| **2. 生产发布与覆盖** | `npm publish`、`git push --force`、`./deploy-prod.sh` | 影响线上生产环境 | **严禁自动试跑**。仅做 `npm pack --dry-run` 或语法预检。 |
+| **3. 硬件关机与硬杀** | `shutdown /s`、`reboot`、`kill -9` | 设备失联、任务中断 | **严禁自动试跑**。仅做 SSH 免密连通性检查。 |
+| **4. 资源消耗与扣费** | 批量调用高计费 API、无上限并发爬虫 | 产生资金或额度浪费 | **严禁自动试跑**。仅做单次轻量 ping 探测。 |
+
+> 🛡️ **破坏性按钮 4 级防御执行铁律**：
+> 1. **计划表显式标红**：在向用户展示计划表时，必须打上 `⚠️ [高危/破坏性]` 明确警示；
+> 2. **零副作用静态预检**：只允许使用 `bash -n script.sh`（语法校验）或 `python -m py_compile`，绝不触发实际执行；
+> 3. **自动化验收绝对熔断**：AI 在执行动作级试跑时，**必须主动跳过所有高危/破坏性按钮**；
+> 4. **执行权完全移交人类**：在最终交付报告中明确告知人类：“已完成静态语法预检，因该操作具有破坏性，未进行自动试跑，请在有需要时由您在 Web 界面手动点击。”
 
 ## 2. 基础信息
 
@@ -349,7 +389,7 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 
 ## 8. 最佳实践
 
-1. **AI 登记后必须验证**：`GET /api/apps/:appId` 确认写入成功
+1. **严格落实三维闭环验收**：注册完成后依次执行「配置一致性 -> 安全动作试跑 (exitCode === 0) -> TCP端口探活 (online: true)」，确保全部按钮开箱即用
 2. **识别一次性 vs 常驻**：把握不定时优先 `exec`，避免 pm2 反复拉起
 3. **显式声明 outputFormat**：当脚本产物为结构化 JSON 或含 Mermaid 图表的 Markdown 时，在按钮上显式声明 `"outputFormat": "json"` 或 `"outputFormat": "markdown"`，App-Deck Dock 底部控制台将直接精准渲染，用户无需手动切换
 4. **巧用内联解释器脚本**：临时小工具、探测或轻量数据统计无需在磁盘创建独立脚本文件，直接在 `command` 字段中写 `python3 -c "..."` 或 `bash -c "..."`
@@ -357,7 +397,8 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 6. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
 7. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
 8. **计划先行与表格化对齐**：为新项目生成按钮时，先输出直白的项目/按钮表格供人类用户审阅，用户同意后再调用 API 注册，保障命令安全性与符合用户预期
-9. **严格遵守 pm2 托管铁律**：`managed` 按钮只建 1 个单一入口，命令严禁 `&` 与 `nohup`，切勿额外创建「关闭」或「重启」按钮。
+9. **严格遵守 pm2 托管铁律**：`managed` 按钮只建 1 个单一入口，命令严禁 `&` 与 `nohup`，切勿额外创建「关闭」或「重启」按钮
+10. **坚守破坏性操作安全红线**：严禁自动试跑高危/破坏性按钮，静态预检后在交付报告中明确移交人类在 Web 界面手动触发。
 
 ## 9. 按钮输出多模态格式化规范
 
