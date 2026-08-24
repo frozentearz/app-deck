@@ -36,9 +36,12 @@ test('start passes script name and args to pm2 CLI', async () => {
 
 test('status parses jlist into online/offline', async () => {
   const { script } = await fakePm2(`#!/bin/sh
-echo '[{"name":"blog","pm2_env":{"status":"online","pm_id":0,"restart_time":2}},{"name":"gone","pm2_env":{"status":"stopped","pm_id":1,"restart_time":5}}]'
+echo '[{"name":"dup","pm2_env":{"status":"stopped","pm_id":0,"restart_time":1}},{"name":"dup","pm2_env":{"status":"online","pm_id":1,"restart_time":2}},{"name":"blog","pm2_env":{"status":"online","pm_id":2,"restart_time":2}},{"name":"gone","pm2_env":{"status":"stopped","pm_id":3,"restart_time":5}}]'
 `);
   const pm2 = new Pm2({ pm2Path: script });
+  const dup = await pm2.status('dup');
+  assert.equal(dup.online, true);
+  assert.equal(dup.restarts, 2);
   const status = await pm2.status('blog');
   assert.equal(status.online, true);
   assert.equal(status.restarts, 2);
