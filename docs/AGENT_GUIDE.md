@@ -119,12 +119,17 @@ AI 接入 App-Deck 的标准执行流程（**强制遵循计划先行与人机�
 | `shell` | boolean | ❌ | 是否经 shell 执行（默认 `true`） |
 | `outputFormat` | string | ❌ | 输出渲染格式：`text`（默认文本/ANSI）、`json`（JSON 语法树）、`markdown`（Markdown 与 Mermaid 图表） |
 
-**type 选择规则**
+**type 选择规则与 pm2 托管 (`managed`) 铁律**
 
-| 场景 | type | 示例 |
-|---|---|---|
-| 常驻服务 / dev server，需要守护与自启 | `managed` | `npm run dev`、`python app.py` |
-| 一次性任务：备份 / 部署 / 数据同步 / 构建 | `exec` | `bash backup.sh`、`rsync -a ...` |
+| 场景 | type | 按钮设计 | 示例命令 |
+|---|---|---|---|
+| 常驻 Web 服务 / API / Dev Server（需守护、崩溃自愈、开机自启） | `managed` | **单一启停入口**（运行中按钮自动显示为停止） | `npm run dev`、`.venv/bin/python app.py` |
+| 一次性任务：初始化依赖 / 编译构建 / 数据备份 / 探活 / 拓扑 | `exec` | 单次执行脚本，运行后正常退出 | `pip install -r requirements.txt`、`npm run build` |
+
+> ⚠️ **pm2 托管 (`managed`) 三大铁律（必须严格遵守）**：
+> 1. **单一入口，严禁冗余按钮**：`managed` 按钮在 Web 界面中内置了双态切换（点击 `▶ 启动` 运行，运行中自动切换为 `⏹ 停止`，底层调用 `pm2 stop`）。**严禁为 `managed` 服务额外创建「关闭服务」、「停止服务」或「重启服务」等冗余按钮**！
+> 2. **前台阻塞，严禁 `&`、`nohup` 与手工重定向**：命令必须是**前台运行**（如 `python -m uvicorn ...`）。**严禁在命令末尾添加 `&`、`nohup` 或 `> /tmp/... 2>&1 &`**。如果加了 `&`，主进程将瞬间脱离退出，导致 pm2 误判为 `stopped` 产生假死脱节，而子进程沦为系统孤儿。
+> 3. **传统单次脚本才使用独立多按钮**：只有类似 Tomcat（`bin/catalina.sh start` / `stop`）这种本身就是非阻塞单次脚本的工具，才全部使用 `exec` 类型并拆分 start 与 stop。
 
 > 注意：**不要**把一次性命令设为 `managed`（pm2 会把正常退出当作崩溃而反复拉起）。
 
@@ -233,6 +238,29 @@ AI 接入 App-Deck 的标准执行流程（**强制遵循计划先行与人机�
 
 ### 6.1 登记一个新项目（幂等 PUT）
 
+#### 示例 A：现代 Web 应用（推荐：pm2 常驻守护模式）
+常驻服务（如 Next.js、FastAPI、Flask、Vite）使用 `managed` 类型。**仅需 1 个启动按钮**（启动后自动具备停止功能），无需额外添加停止或重启按钮；搭配 `exec` 类型的维护与探活按钮：
+
+```bash
+curl -X PUT http://localhost:6969/api/apps/blog \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "个人博客",
+    "description": "Next.js 博客系统",
+    "dir": "/path/to/blog",
+    "url": "http://localhost:3000",
+    "port": 3000,
+    "buttons": [
+      { "id": "start",  "label": "启动服务", "type": "managed", "outputFormat": "text", "command": "npm run dev" },
+      { "id": "build",  "label": "编译构建", "type": "exec",    "outputFormat": "text", "command": "npm run build" },
+      { "id": "health", "label": "接口探测", "type": "exec",    "outputFormat": "json", "command": "curl -s http://localhost:3000/api/health" }
+    ]
+  }'
+```
+
+#### 示例 B：传统多步非阻塞脚本（exec 模式）
+针对 Tomcat、自研起停脚本等非阻塞单次命令，全部使用 `exec` 类型并显式拆分起停动作：
+
 ```bash
 curl -X PUT http://localhost:6969/api/apps/tomcat \
   -H 'Content-Type: application/json' \
@@ -328,7 +356,8 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 5. **命令写相对路径**：cwd 单独用 `dir`/`cwd` 字段表达，不要拼在 command 里，便于维护
 6. **按钮 id 稳定**：id 是程序标识，label 才是展示文案；后续文案变化只改 label
 7. **敏感信息**：API 未带认证，请不要写入密钥；如需，将凭证放入 cwd 目录下的独立配置文件（.env 类）
-8. **计划先行与表格化对齐**：为新项目生成按钮时，先输出直白的项目/按钮表格供人类用户审阅，用户同意后再调用 API 注册，保障命令安全性与符合用户预期。
+8. **计划先行与表格化对齐**：为新项目生成按钮时，先输出直白的项目/按钮表格供人类用户审阅，用户同意后再调用 API 注册，保障命令安全性与符合用户预期
+9. **严格遵守 pm2 托管铁律**：`managed` 按钮只建 1 个单一入口，命令严禁 `&` 与 `nohup`，切勿额外创建「关闭」或「重启」按钮。
 
 ## 9. 按钮输出多模态格式化规范
 

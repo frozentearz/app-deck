@@ -79,9 +79,11 @@ export class Pm2 {
     const list = await this.list();
     const proc = list.find((p) => p.name === name);
     if (!proc) return { online: false, restarts: 0, name };
+    const online = proc.pm2_env?.status === 'online';
     return {
-      online: proc.pm2_env?.status === 'online',
+      online,
       restarts: proc.pm2_env?.restart_time ?? 0,
+      uptime: online ? (proc.pm2_env?.pm_uptime ?? null) : null,
       name,
     };
   }

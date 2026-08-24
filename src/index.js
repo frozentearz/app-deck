@@ -146,6 +146,9 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
         try {
           const status = await pm2.status(pm2Name(app.id, b.id));
           v.state = status.online ? 'running' : 'idle';
+          if (status.online && status.uptime) {
+            v.startedAt = status.uptime;
+          }
         } catch {}
       } else if (runs[key]) {
         v.state = runs[key].state;
@@ -540,7 +543,7 @@ export function createServer({ store, pm2Path, publicDir = join(__dirname, '..',
         const last = history[0] ?? null;
         send(res, 200, {
           state: status.online ? 'running' : 'idle',
-          startedAt: last?.startedAt ?? null,
+          startedAt: (status.online && status.uptime) ? status.uptime : (last?.startedAt ?? null),
           lastResult: last ? { exitCode: last.exitCode, success: last.success, killed: last.killed, finishedAt: last.finishedAt } : null,
         });
       } catch {
