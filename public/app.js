@@ -317,7 +317,8 @@ function render() {
 
 function createAppCard(app) {
   const card = document.createElement('section');
-  card.className = `card ${app.pinned ? 'is-pinned' : ''}`;
+  const isFocused = dockState.appId === app.id && document.body.classList.contains('dock-open');
+  card.className = `card ${app.pinned ? 'is-pinned' : ''} ${isFocused ? 'dock-focused' : ''}`;
   card.dataset.appId = app.id;
 
   // 1. Card Header
@@ -1051,16 +1052,16 @@ function highlightActiveCard(appId) {
 
 function ensureCardVisibleAboveDock(appId) {
   if (!appId) return;
-  const card = document.querySelector(`.card[data-app-id="${appId}"]`);
-  if (!card) return;
-
   const dock = $('#dockPanel');
   if (dock && dock.classList.contains('expanded')) return;
 
-  requestAnimationFrame(() => {
-    const dockHeight = dock ? dock.offsetHeight : 340;
+  setTimeout(() => {
+    const card = document.querySelector(`.card[data-app-id="${appId}"]`);
+    if (!card) return;
+    const dockEl = $('#dockPanel');
+    const dockHeight = (dockEl && !dockEl.classList.contains('collapsed')) ? dockEl.offsetHeight : 340;
     const cardRect = card.getBoundingClientRect();
-    const navbarHeight = 64;
+    const navbarHeight = 70;
     const safeBottom = window.innerHeight - dockHeight - 20;
 
     if (cardRect.bottom > safeBottom) {
@@ -1070,7 +1071,7 @@ function ensureCardVisibleAboveDock(appId) {
       const scrollAmount = cardRect.top - (navbarHeight + 16);
       window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
     }
-  });
+  }, 40);
 }
 
 function toggleDock(show) {
@@ -1803,7 +1804,9 @@ async function runButton(app, button) {
 
     if (button.type === 'exec') {
       dockState.appId = app.id;
+      highlightActiveCard(app.id);
       toggleDock(true);
+      ensureCardVisibleAboveDock(app.id);
 
       const liveId = 'live-' + Date.now();
       const liveItem = {
