@@ -27,12 +27,13 @@
   - [2.4 跨 Agent 一键接管 4 步流](#24-跨-agent-一键接管-4-步流)
 - [模块三：数据模型与多模态规范](#模块三数据模型与多模态规范)
   - [3.1 App 与 Button 数据结构 Schema](#31-app-与-button-数据结构-schema)
-  - [3.2 按钮多模态渲染矩阵 (outputFormat)](#32-按钮多模态渲染矩阵-outputformat)
-  - [3.3 按钮命令支持的 4 种脚本形态](#33-按钮命令支持的-4-种脚本形态)
+  - [3.2 运行状态与日志响应结构体 Schema](#32-运行状态与日志响应结构体-schema)
+  - [3.3 按钮多模态渲染矩阵 (outputFormat)](#33-按钮多模态渲染矩阵-outputformat)
+  - [3.4 按钮命令支持的 4 种脚本形态](#34-按钮命令支持的-4-种脚本形态)
 - [模块四：API 接口参考与场景示例](#模块四api-接口参考与场景示例)
   - [4.1 基础信息与通用约定](#41-基础信息与通用约定)
   - [4.2 常用场景 cURL 示例](#42-常用场景-curl-示例)
-  - [4.3 完整 RESTful 接口字典](#43-完整-restful-接口字典)
+  - [4.3 完整 RESTful 接口字典与系统说明](#43-完整-restful-接口字典与系统说明)
 
 ---
 
@@ -110,6 +111,8 @@ AI 必须先整理一份清晰直白的 Markdown 计划表呈现给用户，清�
 ### 2.2 阶段二：人机确认后幂等写入 (PUT)
 
 用户明确同意后，AI 发起 `PUT /api/apps/:appId`（全量覆盖）或 `PUT .../buttons/:buttonId`（单按钮追加）完成写入。
+
+> **占位支持**：若某些路径或依赖尚未就绪，`dir` 和 `command` 可先留空占位（未配置时点击按钮返回 `400 { "error": "请先配置项目路径与项目按钮的脚本" }`），可在后续通过 UI 或 API 补全。
 
 ---
 
@@ -212,7 +215,77 @@ flowchart LR
 
 ---
 
-### 3.2 按钮多模态渲染矩阵 (outputFormat)
+### 3.2 运行状态与日志响应结构体 Schema
+
+#### 1. 项目 TCP 探活响应 (`GET /api/apps/:id/status`)
+```json
+{
+  "online": true
+}
+```
+- `true`：端口监听中，服务在线；`false`：端口未监听；`null`：未配置 `port` 字段。
+
+#### 2. 按钮执行响应 (`POST .../run`)
+```json
+{
+  "state": "running",
+  "runId": 1
+}
+```
+- 状态码 `202 Accepted`。结果不在此响应中，由 `logs` 接口异步查询。
+
+#### 3. 按钮运行状态响应 (`GET .../status`)
+```json
+{
+  "state": "idle",
+  "startedAt": 1720000000000,
+  "lastResult": {
+    "exitCode": 0,
+    "success": true,
+    "killed": false,
+    "finishedAt": 1720000001000
+  }
+}
+```
+
+#### 4. 按钮历史日志响应 (`GET .../logs`)
+最新 50 条按时间倒序返回：
+```json
+[
+  {
+    "id": "r1",
+    "startedAt": 1720000000000,
+    "finishedAt": 1720000001000,
+    "exitCode": 0,
+    "success": true,
+    "killed": false,
+    "outputFormat": "text",
+    "summary": "输出摘要（末尾 200 字）",
+    "output": "完整控制台输出（截断 64KB）"
+  }
+]
+```
+
+#### 5. 项目级全量日志合并响应 (`GET /api/apps/:id/logs`)
+```json
+{
+  "entries": [
+    {
+      "id": "r1",
+      "label": "启动服务",
+      "startedAt": 1720000000000,
+      "finishedAt": 1720000001000,
+      "exitCode": 0,
+      "success": true,
+      "output": "..."
+    }
+  ]
+}
+```
+
+---
+
+### 3.3 按钮多模态渲染矩阵 (outputFormat)
 
 App-Deck 控制台内置了多模态渲染引擎，根据按钮的 `outputFormat` 自动激活专属呈现视图：
 
@@ -224,7 +297,7 @@ App-Deck 控制台内置了多模态渲染引擎，根据按钮的 `outputFormat
 
 ---
 
-### 3.3 按钮命令支持的 4 种脚本形态
+### 3.4 按钮命令支持的 4 种脚本形态
 
 1. **直接调用独立脚本文件**：
    `python3 scripts/backup.py` 或 `./deploy.sh`
@@ -316,7 +389,7 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 
 ---
 
-### 4.3 完整 RESTful 接口字典
+### 4.3 完整 RESTful 接口字典与系统说明
 
 #### 项目 CRUD
 | 方法 | 路径 | 说明 |
@@ -362,3 +435,8 @@ curl http://localhost:6969/api/apps/tomcat/buttons/start/logs
 | GET | `/api/system/status` | 守护/自启状态：`{ daemon, startup, pm2Installed }` |
 | POST | `/api/system/daemon` | 开关 app-deck 自身守护（body `{ "enabled": true / false }`） |
 | POST | `/api/system/startup` | 开关开机自启（body `{ "enabled": true / false }`） |
+
+> **守护与自启行为说明**：
+> - `POST /api/system/daemon` 开启时：pm2 拉起 app-deck 后，当前进程自动退出（避免端口冲突）；关闭时：先返回响应，稍后停止 pm2 进程；
+> - `POST /api/system/startup`：在 macOS/Linux 上 `pm2 startup` 需要管理员权限，接口会返回 `{ "enabled": true, "manual": "sudo env PATH=... pm2 startup ..." }` 供用户在终端执行；Windows 自动调用 `pm2-windows-startup`；
+> - 若主机未安装 pm2，守护与自启接口均返回 `503`，且 `pm2Installed: false`。
