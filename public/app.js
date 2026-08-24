@@ -118,7 +118,40 @@ async function loadSystem() {
 async function refreshAppStatusBackground() {
   if (document.hidden) return;
   await probeAllAppsStatus();
+  await syncRunningButtonsStatus();
   updateGlobalStats();
+}
+
+/** 兜底自愈：同步所有处于 running 状态的按钮真实后端状态 */
+async function syncRunningButtonsStatus() {
+  const runningButtons = [];
+  for (const app of state.apps) {
+    for (const b of (app.buttons || [])) {
+      if (b.state === 'running' && b.type === 'exec') {
+        runningButtons.push({ app, button: b });
+      }
+    }
+  }
+  if (runningButtons.length === 0) return;
+
+  await Promise.allSettled(
+    runningButtons.map(async ({ app, button }) => {
+      try {
+        const res = await api(`/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/status`);
+        if (res.state === 'idle') {
+          button.state = 'idle';
+          button.startedAt = null;
+          const runKey = `${app.id}/${button.id}`;
+          if (activeRunStreams.has(runKey)) {
+            try { activeRunStreams.get(runKey).close(); } catch {}
+            activeRunStreams.delete(runKey);
+          }
+          updateCardsTelemetry();
+          loadApps();
+        }
+      } catch {}
+    })
+  );
 }
 
 /** 探活所有配置了端口的项目（TCP 真实探活） */
@@ -941,9 +974,10 @@ const dockState = {
   history: [],
   selectedId: null,
   autoScroll: true,
-  eventSource: null,
   filterQuery: ''
 };
+
+const activeRunStreams = new Map();
 
 function initDockResize() {
   const handle = $('#dockResizeHandle');
@@ -1094,10 +1128,6 @@ function toggleDock(show) {
     if (text) text.textContent = t('fullscreen');
     const hint = $('#fsKbdHint');
     if (hint) hint.textContent = 'F';
-    if (dockState.eventSource) {
-      dockState.eventSource.close();
-      dockState.eventSource = null;
-    }
   }
 }
 
@@ -1907,21 +1937,22 @@ async function runButton(app, button) {
       renderDockHistoryList();
       renderDockOutput();
 
-      if (dockState.eventSource) {
-        dockState.eventSource.close();
-        dockState.eventSource = null;
+      const runKey = `${app.id}/${button.id}`;
+      if (activeRunStreams.has(runKey)) {
+        try { activeRunStreams.get(runKey).close(); } catch {}
+        activeRunStreams.delete(runKey);
       }
 
       const streamUrl = `/api/apps/${encodeURIComponent(app.id)}/buttons/${encodeURIComponent(button.id)}/stream`;
       const es = new EventSource(streamUrl);
-      dockState.eventSource = es;
+      activeRunStreams.set(runKey, es);
 
       es.addEventListener('init', (e) => {
         try {
           const data = JSON.parse(e.data);
           if (data.output) {
             liveItem.output = data.output;
-            if (dockState.selectedId === liveId) renderDockOutput();
+            if (dockState.appId === app.id && dockState.selectedId === liveId) renderDockOutput();
           }
         } catch {}
       });
@@ -1931,34 +1962,40 @@ async function runButton(app, button) {
           const data = JSON.parse(e.data);
           if (data.chunk) {
             liveItem.output += data.chunk;
-            if (dockState.selectedId === liveId) renderDockOutput();
+            if (dockState.appId === app.id && dockState.selectedId === liveId) renderDockOutput();
           }
         } catch {}
       });
 
+      const finishStream = (exitCode, success, killed) => {
+        liveItem.running = false;
+        liveItem.exitCode = exitCode ?? 0;
+        liveItem.success = success ?? (liveItem.exitCode === 0);
+        liveItem.killed = killed ?? false;
+        if (dockState.appId === app.id) {
+          renderDockHistoryList();
+          if (dockState.selectedId === liveId) renderDockOutput();
+        }
+        try { es.close(); } catch {}
+        activeRunStreams.delete(runKey);
+        button.startedAt = null;
+        button.state = 'idle';
+        updateCardsTelemetry();
+        updateGlobalStats();
+        loadApps();
+      };
+
       es.addEventListener('end', (e) => {
         try {
           const data = JSON.parse(e.data);
-          liveItem.running = false;
-          liveItem.exitCode = data.exitCode ?? 0;
-          liveItem.success = data.success ?? (data.exitCode === 0);
-          liveItem.killed = data.killed ?? false;
-          renderDockHistoryList();
-          if (dockState.selectedId === liveId) renderDockOutput();
-        } catch {}
-        es.close();
-        if (dockState.eventSource === es) dockState.eventSource = null;
-        button.startedAt = null;
-        button.state = 'idle';
-        loadApps();
+          finishStream(data.exitCode, data.success, data.killed);
+        } catch {
+          finishStream(0, true, false);
+        }
       });
 
       es.onerror = () => {
-        es.close();
-        if (dockState.eventSource === es) dockState.eventSource = null;
-        button.startedAt = null;
-        button.state = 'idle';
-        loadApps();
+        finishStream(null, false, false);
       };
     }
   } catch (err) {
